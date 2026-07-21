@@ -67,7 +67,7 @@ export default async function TagsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={mergeTagsAction} className="flex items-end gap-3">
+            <form action={mergeTagsAction} className="flex flex-wrap items-end gap-3">
               <label className="space-y-1 text-sm">
                 <span>Merge</span>
                 <select name="sourceTagId" className="block rounded border px-2 py-2 text-sm" required>

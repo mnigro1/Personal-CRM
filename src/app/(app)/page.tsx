@@ -64,15 +64,15 @@ export default async function ContactsPage({
         <Input name="location" placeholder="Location" defaultValue={asStr(sp.location) ?? ""} />
         <Input name="company" placeholder="Company" defaultValue={asStr(sp.company) ?? ""} />
         <Input name="category" placeholder="Relationship category" defaultValue={asStr(sp.category) ?? ""} />
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex flex-wrap items-center gap-2 text-sm">
           Last interaction before
           <input type="date" name="lastBefore" defaultValue={asStr(sp.lastBefore) ?? ""} className="rounded border px-2 py-1" />
         </label>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex flex-wrap items-center gap-2 text-sm">
           after
           <input type="date" name="lastAfter" defaultValue={asStr(sp.lastAfter) ?? ""} className="rounded border px-2 py-1" />
         </label>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex flex-wrap items-center gap-2 text-sm">
           <input type="checkbox" name="openFollowUps" value="1" defaultChecked={sp.openFollowUps === "1"} />
           Has open follow-ups
         </label>
