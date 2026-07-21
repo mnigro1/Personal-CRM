@@ -106,6 +106,8 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     expect(instructions).toContain("timezone is UTC");
     expect(instructions).toContain("Never guess between two similar people");
     expect(instructions).toContain("apply_extraction ONLY after");
+    // Proactive processing default.
+    expect(instructions).toContain("PROACTIVELY PROCESS CAPTURES");
   });
 
   it("scopes each token to its own workspace", async () => {
