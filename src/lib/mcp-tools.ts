@@ -117,7 +117,21 @@ export function registerCrmTools(
     async ({ contactId }) => {
       const contact = await repo.getContact(contactId);
       if (!contact) return json({ error: "Contact not found" });
-      return json(contact);
+      // Nudge the AI to regenerate the Layer-3 snapshot right when it's
+      // looking at the contact — more reliable than the session-start sweep.
+      const hasMemories = contact.memories.some((m) => m.status === "current");
+      const snapshotStale =
+        contact.aiSummaryStale || (!contact.aiSummary && hasMemories);
+      return json({
+        ...contact,
+        snapshotStale,
+        ...(snapshotStale
+          ? {
+              action:
+                "This contact's AI snapshot is missing or outdated — call refresh_contact_summary with a fresh 2-3 sentence summary built from the fields, memories, interactions, and follow-ups above.",
+            }
+          : {}),
+      });
     },
   );
 

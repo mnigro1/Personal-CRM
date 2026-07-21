@@ -127,6 +127,30 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     expect(bContacts.map((c: { name: string }) => c.name)).toEqual(["BobOnly"]);
   });
 
+  it("get_contact flags a stale/missing snapshot so the AI refreshes it", async () => {
+    const repoA = repoFor(wsAId);
+    const c = await repoA.createContact({ firstName: "NeedsSnapshot" });
+    await repoA.addMemory({ contactId: c.id, text: "Loves hiking", category: "interests" });
+
+    const res = await rpc(tokenA, "tools/call", {
+      name: "get_contact",
+      arguments: { contactId: c.id },
+    }, 6);
+    const payload = JSON.parse(res.body.result.content[0].text);
+    expect(payload.snapshotStale).toBe(true);
+    expect(payload.action).toContain("refresh_contact_summary");
+
+    // Once a summary is written, the nudge disappears.
+    await repoA.updateContactSummary(c.id, "You met NeedsSnapshot. They love hiking.");
+    const res2 = await rpc(tokenA, "tools/call", {
+      name: "get_contact",
+      arguments: { contactId: c.id },
+    }, 7);
+    const payload2 = JSON.parse(res2.body.result.content[0].text);
+    expect(payload2.snapshotStale).toBe(false);
+    expect(payload2.action).toBeUndefined();
+  });
+
   it("revoked tokens stop working immediately", async () => {
     const [row] = await listMcpTokens(userBId);
     await revokeMcpToken(userBId, row.id);
