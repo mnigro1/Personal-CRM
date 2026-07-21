@@ -99,12 +99,27 @@ export default async function ContactPage({
         </div>
       </div>
 
-      {/* AI snapshot placeholder (Phase 3) */}
-      <Card className="border-dashed">
-        <CardContent className="py-4 text-sm text-muted-foreground">
-          AI snapshot will appear here once the intelligence layer is connected.
-        </CardContent>
-      </Card>
+      {/* AI snapshot — Layer-3 cache, written by the connected AI */}
+      {contact.aiSummary ? (
+        <Card>
+          <CardContent className="space-y-1 py-4">
+            <p className="text-sm">{contact.aiSummary}</p>
+            <p className="text-xs text-muted-foreground">
+              AI snapshot
+              {contact.aiSummaryGeneratedAt &&
+                ` · ${new Date(contact.aiSummaryGeneratedAt).toLocaleDateString()}`}
+              {contact.aiSummaryStale && " · outdated — refreshes next time you chat"}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-dashed">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            No AI snapshot yet — it&apos;ll appear after your AI processes an
+            interaction with this contact.
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Memories */}

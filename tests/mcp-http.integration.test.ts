@@ -108,6 +108,7 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     expect(instructions).toContain("apply_extraction ONLY after");
     // Proactive processing default.
     expect(instructions).toContain("PROACTIVELY PROCESS CAPTURES");
+    expect(instructions).toContain("refresh_contact_summary");
   });
 
   it("scopes each token to its own workspace", async () => {

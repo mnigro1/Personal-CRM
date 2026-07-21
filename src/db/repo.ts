@@ -360,6 +360,54 @@ export function repoFor(workspaceId: string) {
       return row ?? null;
     },
 
+    /**
+     * Layer 3 cache write: the AI snapshot is regenerable and never a
+     * substitute for Layer 1/2, so it needs no approval flow or revisions.
+     */
+    async updateContactSummary(contactId: string, summary: string) {
+      const [row] = await db
+        .update(contacts)
+        .set({
+          aiSummary: summary,
+          aiSummaryStale: false,
+          aiSummaryGeneratedAt: new Date(),
+        })
+        .where(and(eq(contacts.id, contactId), wsContacts()))
+        .returning();
+      return row ?? null;
+    },
+
+    /** Contacts whose snapshot is missing or invalidated by newer data. */
+    async listStaleSummaries(limit = 20) {
+      return db
+        .select({
+          id: contacts.id,
+          firstName: contacts.firstName,
+          lastName: contacts.lastName,
+          preferredName: contacts.preferredName,
+          aiSummaryGeneratedAt: contacts.aiSummaryGeneratedAt,
+        })
+        .from(contacts)
+        .where(
+          and(
+            wsContacts(),
+            or(
+              eq(contacts.aiSummaryStale, true),
+              and(
+                isNull(contacts.aiSummary),
+                exists(
+                  db
+                    .select({ one: sql`1` })
+                    .from(memories)
+                    .where(eq(memories.contactId, contacts.id)),
+                ),
+              ),
+            ),
+          ),
+        )
+        .limit(limit);
+    },
+
     async softDeleteContact(contactId: string) {
       await db
         .update(contacts)
