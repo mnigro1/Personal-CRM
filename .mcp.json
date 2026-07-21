@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "personal-crm": {
+      "command": "npx",
+      "args": ["tsx", "mcp/server.ts"],
+      "cwd": "."
+    }
+  }
+}
