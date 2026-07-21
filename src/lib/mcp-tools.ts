@@ -64,9 +64,20 @@ export function registerCrmTools(
     content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
   });
 
+  // Read tools are marked read-only and writes non-destructive so well-behaved
+  // clients (claude.ai, ChatGPT) auto-run the safe ones instead of prompting
+  // for approval on every call. Hints only — clients may still confirm.
+  const readOnly = { readOnlyHint: true, openWorldHint: false } as const;
+  const safeWrite = {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+  } as const;
+
   server.registerTool(
     "search_contacts",
     {
+      annotations: { title: "Search contacts", ...readOnly },
       description:
         "Search contacts in the workspace. All filters optional; returns matching contacts with their tags.",
       inputSchema: {
@@ -110,6 +121,7 @@ export function registerCrmTools(
   server.registerTool(
     "get_contact",
     {
+      annotations: { title: "Get contact", ...readOnly },
       description:
         "Full record for one contact: fields, memories, interactions (with raw source), open follow-ups, tags.",
       inputSchema: { contactId: z.string().uuid() },
@@ -138,6 +150,7 @@ export function registerCrmTools(
   server.registerTool(
     "create_contact",
     {
+      annotations: { title: "Create contact", ...safeWrite },
       description: "Create a new contact in the workspace.",
       inputSchema: {
         firstName: z.string(),
@@ -170,6 +183,7 @@ export function registerCrmTools(
   server.registerTool(
     "log_interaction",
     {
+      annotations: { title: "Log interaction", ...safeWrite },
       description:
         "Persist an interaction (raw notes stored verbatim, persist-first). Detects duplicate pastes by content hash — if duplicate, returns the existing interaction instead of creating.",
       inputSchema: {
@@ -211,6 +225,7 @@ export function registerCrmTools(
   server.registerTool(
     "list_pending_captures",
     {
+      annotations: { title: "List pending captures", ...readOnly },
       description:
         "Interactions awaiting AI extraction (extraction_status = pending). Process each with get_extraction_context + submit_extraction_proposal.",
       inputSchema: {},
@@ -231,6 +246,7 @@ export function registerCrmTools(
   server.registerTool(
     "get_extraction_context",
     {
+      annotations: { title: "Get extraction context", ...readOnly },
       description:
         "Everything needed to extract one interaction: raw source, user timezone (anchor all relative dates to it), contact roster for entity resolution, current memories of linked contacts (facts already known), existing tags (reuse, don't invent), open follow-ups, and the extraction rules to follow. Then call submit_extraction_proposal.",
       inputSchema: { interactionId: z.string().uuid() },
@@ -245,6 +261,7 @@ export function registerCrmTools(
   server.registerTool(
     "submit_extraction_proposal",
     {
+      annotations: { title: "Stage extraction proposal", ...safeWrite },
       description:
         "Stage an extraction proposal for user review (never applies anything directly). Follow the rules and JSON shape from get_extraction_context's instructions. Returns dedup flags and blocking items (ambiguous/new bindings) — relay those to the user. The user approves on the web review screen, or in chat via apply_extraction.",
       inputSchema: {
@@ -324,6 +341,11 @@ export function registerCrmTools(
   server.registerTool(
     "refresh_contact_summary",
     {
+      annotations: {
+        title: "Refresh AI snapshot",
+        ...safeWrite,
+        idempotentHint: true,
+      },
       description:
         "Write the AI snapshot for a contact — a 2-3 sentence second-person summary ('You met her at...') distilled from their current memories, recent interactions, and open follow-ups (fetch via get_contact). This is a regenerable Layer-3 cache: safe to write without user approval, never a substitute for memories. Refresh it whenever it's stale.",
       inputSchema: {
@@ -348,6 +370,7 @@ export function registerCrmTools(
   server.registerTool(
     "list_stale_summaries",
     {
+      annotations: { title: "List stale snapshots", ...readOnly },
       description:
         "Contacts whose AI snapshot is missing or outdated (new facts landed since it was written). Refresh each with get_contact + refresh_contact_summary.",
       inputSchema: {},
@@ -358,6 +381,7 @@ export function registerCrmTools(
   server.registerTool(
     "add_memory",
     {
+      annotations: { title: "Add memory", ...safeWrite },
       description:
         "Attach a structured memory (fact) to a contact. eventDate is when the thing happens/happened, resolved to an absolute date.",
       inputSchema: {
@@ -378,6 +402,7 @@ export function registerCrmTools(
   server.registerTool(
     "list_follow_ups",
     {
+      annotations: { title: "List follow-ups", ...readOnly },
       description: "List all open follow-ups in the workspace, with their contacts.",
       inputSchema: {},
     },
@@ -387,6 +412,7 @@ export function registerCrmTools(
   server.registerTool(
     "add_follow_up",
     {
+      annotations: { title: "Add follow-up", ...safeWrite },
       description: "Create a follow-up for a contact. reason is required — always explain why.",
       inputSchema: {
         contactId: z.string().uuid(),
@@ -405,6 +431,7 @@ export function registerCrmTools(
   server.registerTool(
     "complete_follow_up",
     {
+      annotations: { title: "Complete follow-up", ...safeWrite, idempotentHint: true },
       description: "Mark a follow-up as completed.",
       inputSchema: { followUpId: z.string().uuid() },
     },
