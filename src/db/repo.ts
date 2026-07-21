@@ -14,6 +14,7 @@ import {
   sql,
   SQL,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
   contacts,
@@ -320,6 +321,77 @@ export function repoFor(workspaceId: string) {
       };
     },
 
+    /**
+     * Likely-same-person matches for a name, via trigram similarity plus a
+     * first-name-exact fallback (short names score poorly on trigrams).
+     */
+    async findSimilarContacts(
+      firstName: string,
+      lastName?: string | null,
+      threshold = 0.4,
+    ) {
+      const full = `${firstName} ${lastName ?? ""}`.trim();
+      const nameExpr = sql`trim(coalesce(${contacts.firstName},'') || ' ' || coalesce(${contacts.lastName},''))`;
+      return db
+        .select({
+          id: contacts.id,
+          firstName: contacts.firstName,
+          lastName: contacts.lastName,
+          currentCompany: contacts.currentCompany,
+          currentRole: contacts.currentRole,
+          location: contacts.location,
+          lastInteractionDate: contacts.lastInteractionDate,
+          similarity: sql<number>`similarity(${nameExpr}, ${full})`,
+        })
+        .from(contacts)
+        .where(
+          and(
+            wsContacts(),
+            or(
+              sql`similarity(${nameExpr}, ${full}) >= ${threshold}`,
+              // "Matt" vs "Matthew Weinstein": same first name still worth a look.
+              sql`lower(${contacts.firstName}) = lower(${firstName})`,
+            ),
+          ),
+        )
+        .orderBy(desc(sql`similarity(${nameExpr}, ${full})`))
+        .limit(5);
+    },
+
+    /** Workspace-wide scan for contact pairs that look like the same person. */
+    async findDuplicateContactPairs(threshold = 0.5) {
+      const a = alias(contacts, "a");
+      const b = alias(contacts, "b");
+      const nameA = sql`trim(coalesce(${a.firstName},'') || ' ' || coalesce(${a.lastName},''))`;
+      const nameB = sql`trim(coalesce(${b.firstName},'') || ' ' || coalesce(${b.lastName},''))`;
+      return db
+        .select({
+          aId: a.id,
+          aName: nameA.as("a_name"),
+          aCompany: a.currentCompany,
+          bId: b.id,
+          bName: nameB.as("b_name"),
+          bCompany: b.currentCompany,
+          similarity: sql<number>`similarity(${nameA}, ${nameB})`,
+        })
+        .from(a)
+        .innerJoin(
+          b,
+          and(
+            eq(b.workspaceId, workspaceId),
+            sql`${a.id} < ${b.id}`,
+            isNull(b.deletedAt),
+            or(
+              sql`similarity(${nameA}, ${nameB}) >= ${threshold}`,
+              sql`lower(${a.firstName}) = lower(${b.firstName}) AND coalesce(lower(${a.lastName}),'') = coalesce(lower(${b.lastName}),'')`,
+            ),
+          ),
+        )
+        .where(and(eq(a.workspaceId, workspaceId), isNull(a.deletedAt)))
+        .orderBy(desc(sql`similarity(${nameA}, ${nameB})`))
+        .limit(25);
+    },
+
     async createContact(data: NewContact) {
       const [row] = await db
         .insert(contacts)
@@ -416,6 +488,22 @@ export function repoFor(workspaceId: string) {
     },
 
     // -------------------------------------------------------------------- tags
+
+    /** Tags with how many contacts carry each — the signal for consolidation. */
+    async listTagsWithCounts() {
+      return db
+        .select({
+          id: tags.id,
+          name: tags.name,
+          normalizedName: tags.normalizedName,
+          contactCount: sql<number>`count(${contactTags.contactId})::int`,
+        })
+        .from(tags)
+        .leftJoin(contactTags, eq(contactTags.tagId, tags.id))
+        .where(and(eq(tags.workspaceId, workspaceId), isNull(tags.deletedAt)))
+        .groupBy(tags.id, tags.name, tags.normalizedName)
+        .orderBy(desc(sql`count(${contactTags.contactId})`), asc(tags.normalizedName));
+    },
 
     async listTags() {
       return db

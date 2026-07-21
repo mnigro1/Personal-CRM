@@ -43,6 +43,10 @@ CAPTURING (when the user describes a conversation or pastes notes):
 4. Report concisely what you proposed, flag probable duplicates and blocking items (ambiguous names, new contacts), and mention the review link.
 5. apply_extraction ONLY after the user explicitly approves in chat ("looks good" = everything non-blocked; a subset = exactly that subset). Never apply unprompted.
 
+TAG HYGIENE: tags are broad categories (10-30 total), not per-fact labels — facts belong in memories. Before tagging, check list_tags and reuse aggressively ("alumni" covers "AlumniChat"). Never tag transient states ("owed an update", "missing email") — those are follow-ups or just gaps. If the user asks to clean up tags (or you notice obvious near-duplicates), propose a consolidation plan from list_tags counts and, after they approve it in chat, execute with merge_tags.
+
+DUPLICATE CONTACTS: before creating anyone, search_contacts for their name — create_contact also hard-blocks likely duplicates and returns candidates; ask the user "same person?" and reuse the existing record unless they confirm it's someone new (then retry with force: true). find_duplicate_contacts scans for existing duplicate pairs on request.
+
 SNAPSHOTS (Layer-3 cache — no approval needed): after any apply_extraction, immediately refresh_contact_summary for each contact in the result's touchedContacts. Also check list_stale_summaries when a conversation starts and refresh what's there. Summaries: 2-3 factual sentences, second person ("You met her at HBS in 2026..."), built from get_contact's memories/timeline/follow-ups — never invented.
 
 HARD RULES: Never guess between two similar people — propose ambiguous bindings with hints. People merely mentioned (a spouse, a colleague) become memories on the present contact, not new contacts, unless the user clearly has their own relationship with them. New contacts are never created silently. Known facts go to already_known, not new_memories. Contradictions = supersession (history preserved). Every follow-up needs a reason. undo_extraction_batch exists — offer it if something applied was wrong.
@@ -151,7 +155,8 @@ export function registerCrmTools(
     "create_contact",
     {
       annotations: { title: "Create contact", ...safeWrite },
-      description: "Create a new contact in the workspace.",
+      description:
+        "Create a new contact. Blocks with a possibleDuplicates list when a similar contact already exists — confirm with the user before retrying with force: true.",
       inputSchema: {
         firstName: z.string(),
         lastName: z.string().optional(),
@@ -168,9 +173,39 @@ export function registerCrmTools(
         relationshipCategory: z.string().optional(),
         notes: z.string().optional(),
         tags: z.array(z.string()).optional(),
+        force: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Set true ONLY after the user confirms this is a different person than the possibleDuplicates returned by a blocked attempt",
+          ),
       },
     },
-    async ({ tags: tagNames, emails, ...fields }) => {
+    async ({ tags: tagNames, emails, force, ...fields }) => {
+      // Duplicate gate: same person under two entries is the failure that
+      // splits a relationship's history. Block on likely matches unless the
+      // caller explicitly confirms this is someone new.
+      if (!force) {
+        const similar = await repo.findSimilarContacts(
+          fields.firstName,
+          fields.lastName,
+        );
+        if (similar.length > 0) {
+          return json({
+            blocked: true,
+            reason:
+              "Possible duplicate(s) found. Ask the user: is this the same person as one of these? If yes, use that contactId instead of creating. Only if the user confirms it's a different person, call create_contact again with force: true.",
+            possibleDuplicates: similar.map((s) => ({
+              contactId: s.id,
+              name: `${s.firstName} ${s.lastName ?? ""}`.trim(),
+              company: s.currentCompany,
+              role: s.currentRole,
+              location: s.location,
+              similarity: Number(s.similarity?.toFixed?.(2) ?? s.similarity),
+            })),
+          });
+        }
+      }
       const contact = await repo.createContact({
         ...fields,
         emails: emails ?? [],
@@ -336,6 +371,44 @@ export function registerCrmTools(
       inputSchema: { batchId: z.string().uuid() },
     },
     async ({ batchId }) => json(await repo.undoBatch(batchId, actorUserId)),
+  );
+
+  server.registerTool(
+    "list_tags",
+    {
+      annotations: { title: "List tags", ...readOnly },
+      description:
+        "All workspace tags with how many contacts carry each. Use to reuse existing tags and to spot sprawl worth consolidating.",
+      inputSchema: {},
+    },
+    async () => json(await repo.listTagsWithCounts()),
+  );
+
+  server.registerTool(
+    "merge_tags",
+    {
+      description:
+        "Merge one tag into another: every contact on the source tag moves to the target, and the source is retired (old references resolve to the target — it can't come back). Use for consolidating near-duplicates like 'alumni'/'AlumniChat'. Propose the merge plan in chat and get the user's OK before calling.",
+      inputSchema: {
+        sourceTagId: z.string().uuid().describe("The tag being retired"),
+        targetTagId: z.string().uuid().describe("The tag that absorbs it"),
+      },
+    },
+    async ({ sourceTagId, targetTagId }) => {
+      await repo.mergeTags(sourceTagId, targetTagId);
+      return json({ merged: true, sourceTagId, targetTagId });
+    },
+  );
+
+  server.registerTool(
+    "find_duplicate_contacts",
+    {
+      annotations: { title: "Find duplicate contacts", ...readOnly },
+      description:
+        "Scan the workspace for contact pairs that look like the same person (similar or identical names). Present pairs to the user; merging records is a manual decision — never delete or merge contacts without explicit direction.",
+      inputSchema: {},
+    },
+    async () => json(await repo.findDuplicateContactPairs()),
   );
 
   server.registerTool(
