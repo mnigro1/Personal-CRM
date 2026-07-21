@@ -107,13 +107,32 @@ export default async function ReviewScreen({
                         </label>
                       ))}
                     {b.status === "new" && b.new_contact && (
-                      <label className="flex items-center gap-2">
-                        <input type="radio" name={`bind::${b.mention}`} value="create" required />
-                        Create contact: {b.new_contact.first_name} {b.new_contact.last_name ?? ""}
-                        {b.new_contact.current_company && (
-                          <span className="text-muted-foreground">@ {b.new_contact.current_company}</span>
+                      <>
+                        {(staged.flags.new_contacts?.[b.mention] ?? []).length > 0 && (
+                          <div className="rounded border border-amber-400 bg-amber-50 p-2 dark:bg-amber-950">
+                            <p className="mb-1 text-xs font-medium">
+                              Might already be in your CRM — pick one instead of
+                              creating a duplicate:
+                            </p>
+                            {(staged.flags.new_contacts?.[b.mention] ?? []).map((d) => (
+                              <label key={d.contactId} className="flex items-center gap-2">
+                                <input type="radio" name={`bind::${b.mention}`} value={d.contactId} required />
+                                Use existing: {d.name}
+                                {d.company && (
+                                  <span className="text-muted-foreground">@ {d.company}</span>
+                                )}
+                              </label>
+                            ))}
+                          </div>
                         )}
-                      </label>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name={`bind::${b.mention}`} value="create" required />
+                          Create contact: {b.new_contact.first_name} {b.new_contact.last_name ?? ""}
+                          {b.new_contact.current_company && (
+                            <span className="text-muted-foreground">@ {b.new_contact.current_company}</span>
+                          )}
+                        </label>
+                      </>
                     )}
                     <label className="flex items-center gap-2">
                       <input type="radio" name={`bind::${b.mention}`} value="skip" required />

@@ -326,6 +326,8 @@ export function registerCrmTools(
             mention: b.mention,
             status: b.status,
             candidates: b.candidates,
+            // For "new" people who may already exist — reuse instead of duplicating.
+            possibleDuplicates: staged.flags.new_contacts?.[b.mention],
           })),
         });
       } catch (err) {
