@@ -21,7 +21,12 @@ Phases 0–1 complete: schema for all spec tables, magic-link auth with invites,
 
 ## MCP
 
-`.mcp.json` registers a stdio MCP server (`npm run mcp`) exposing the workspace of `MCP_USER_EMAIL`: `search_contacts`, `get_contact`, `create_contact`, `log_interaction`, `add_memory`, `add_follow_up`, `list_follow_ups`, `complete_follow_up`. Claude Code picks it up automatically when working in this repo.
+Two ways in, one shared tool surface (`src/lib/mcp-tools.ts`):
+
+- **Local (Claude Code / Claude Desktop)**: `.mcp.json` registers a stdio server (`npm run mcp`) scoped to `MCP_USER_EMAIL`'s workspace.
+- **Hosted (claude.ai, ChatGPT, any remote MCP client)**: `/api/mcp/<token>` — streamable HTTP, stateless. Each user mints their own connector URL in Settings → "Connect your AI"; the token resolves server-side to exactly their workspace. Revocable anytime.
+
+Tools: contacts/interactions/memories/follow-ups CRUD + the extraction pipeline (`list_pending_captures`, `get_extraction_context`, `submit_extraction_proposal`, `apply_extraction`, `undo_extraction_batch`) per `mcp/EXTRACTION.md`.
 
 ## Tests
 

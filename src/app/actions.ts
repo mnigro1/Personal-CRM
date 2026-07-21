@@ -302,6 +302,23 @@ export async function createInviteAction(formData: FormData) {
   revalidatePath("/settings");
 }
 
+export async function createMcpTokenAction(formData: FormData) {
+  const { user } = await requireSession();
+  const { createMcpToken } = await import("@/db/tokens");
+  const label = str(formData, "label") ?? "My AI";
+  const token = await createMcpToken(user.id, label);
+  revalidatePath("/settings");
+  // The token is shown once, as part of the connector URL it belongs in.
+  redirect(`/settings?newToken=${encodeURIComponent(token)}`);
+}
+
+export async function revokeMcpTokenAction(tokenId: string) {
+  const { user } = await requireSession();
+  const { revokeMcpToken } = await import("@/db/tokens");
+  await revokeMcpToken(user.id, tokenId);
+  revalidatePath("/settings");
+}
+
 export async function updateTimezoneAction(formData: FormData) {
   const { user } = await requireSession();
   const timezone = str(formData, "timezone");
