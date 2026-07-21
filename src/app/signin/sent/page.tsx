@@ -12,9 +12,21 @@ export default function SentPage() {
         <CardHeader>
           <CardTitle>Check your email</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          A sign-in link has been sent. In development, it&apos;s printed in
-          the terminal running <code>npm run dev</code>.
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            We just emailed you a link. Open the email on this device and tap
+            the link to finish signing in.
+          </p>
+          <p>
+            Don&apos;t see it? Check your spam or junk folder — it can take a
+            minute to arrive.
+          </p>
+          {process.env.NODE_ENV !== "production" && (
+            <p className="text-xs">
+              Dev mode: the link was printed in the terminal running{" "}
+              <code>npm run dev</code>.
+            </p>
+          )}
         </CardContent>
       </Card>
     </main>
