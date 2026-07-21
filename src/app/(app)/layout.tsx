@@ -18,7 +18,7 @@ export default async function AppLayout({
   const reviewCount = pending.length + proposed.length;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <header className="border-b">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 p-4">
           <nav className="flex max-w-full items-center gap-4 overflow-x-auto sm:gap-6">
