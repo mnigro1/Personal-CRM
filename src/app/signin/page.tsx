@@ -21,8 +21,8 @@ export default async function SignInPage() {
         <CardHeader>
           <CardTitle>Personal CRM</CardTitle>
           <CardDescription>
-            Sign in with a magic link. In development the link is printed to
-            the server console.
+            Enter your email and we&apos;ll send you a link to sign in — no
+            password needed.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -34,7 +34,7 @@ export default async function SignInPage() {
             className="space-y-4"
           >
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email address</Label>
               <Input
                 id="email"
                 name="email"
@@ -44,8 +44,14 @@ export default async function SignInPage() {
               />
             </div>
             <Button type="submit" className="w-full">
-              Send magic link
+              Send me a sign-in link
             </Button>
+            {process.env.NODE_ENV !== "production" && (
+              <p className="text-center text-xs text-muted-foreground">
+                Dev mode: the link will print in this terminal instead of
+                being emailed.
+              </p>
+            )}
           </form>
         </CardContent>
       </Card>
