@@ -93,9 +93,19 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     expect(init.status).toBe(200);
     const res = await rpc(tokenA, "tools/list", {}, 2);
     expect(res.status).toBe(200);
-    const names = res.body.result.tools.map((t: { name: string }) => t.name);
+    const tools = res.body.result.tools as { name: string; annotations?: Record<string, unknown> }[];
+    const names = tools.map((t) => t.name);
     expect(names).toContain("search_contacts");
     expect(names).toContain("submit_extraction_proposal");
+
+    // Safety hints so clients auto-run low-risk tools instead of prompting.
+    const get = tools.find((t) => t.name === "get_contact");
+    expect(get?.annotations?.readOnlyHint).toBe(true);
+    const refresh = tools.find((t) => t.name === "refresh_contact_summary");
+    expect(refresh?.annotations?.destructiveHint).toBe(false);
+    // The apply step keeps its approval checkpoint — no low-risk hint.
+    const apply = tools.find((t) => t.name === "apply_extraction");
+    expect(apply?.annotations?.readOnlyHint).toBeUndefined();
   });
 
   it("delivers per-user server instructions at initialize", async () => {
