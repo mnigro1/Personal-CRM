@@ -23,6 +23,30 @@ Proposal JSON shape:
 Rules: NEVER guess between two plausible people — return status "ambiguous" with candidate hints. Mentioned-but-not-present people (spouse, colleague) become memories on the primary contact, NOT new contacts, unless the text implies the user has a direct relationship. Facts already in currentMemories go in already_known, not new_memories. Contradictions pair a new memory with a supersession (history is preserved). Resolve relative dates ("next spring") to absolute event_date using the interaction date and userTimezone, with honest precision. Reuse existingTags loosely ("healthcare" ≈ "Healthcare"); is_new only when nothing fits. Memories are single durable third-person facts, not conversation summaries. A note with no extractable facts is a valid outcome — don't invent content.`;
 
 /**
+ * Server-wide instructions delivered to every MCP client at initialize time
+ * (the protocol's `instructions` field). This is the always-on rule set —
+ * clients receive it automatically with no copy-paste setup. Personalized
+ * with the workspace owner's timezone. mcp/CLAUDE_PROJECT_INSTRUCTIONS.md
+ * remains as optional reinforcement for clients that under-weight this field.
+ */
+export function buildServerInstructions(opts: { timezone: string }): string {
+  return `This is the user's personal relationship CRM. You are its interface: capture interactions accurately, retrieve context on request, and never write bad data. Precision beats speed — ask instead of guessing.
+
+DATES: The user's timezone is ${opts.timezone}. Resolve every relative date ("yesterday", "last Tuesday") against the actual current date in that timezone, to ISO 8601, before calling any tool. No stated date = assume today and say so. Genuinely ambiguous = ask.
+
+CAPTURING (when the user describes a conversation or pastes notes):
+1. search_contacts to identify who was PRESENT — never invent contact ids.
+2. log_interaction: rawSource = the user's words VERBATIM (never summarized or cleaned up), resolved occurredAt, inferred type, location if mentioned, contactIds of present people only.
+3. get_extraction_context, follow its instructions field exactly, submit_extraction_proposal.
+4. Report concisely what you proposed, flag probable duplicates and blocking items (ambiguous names, new contacts), and mention the review link.
+5. apply_extraction ONLY after the user explicitly approves in chat ("looks good" = everything non-blocked; a subset = exactly that subset). Never apply unprompted.
+
+HARD RULES: Never guess between two similar people — propose ambiguous bindings with hints. People merely mentioned (a spouse, a colleague) become memories on the present contact, not new contacts, unless the user clearly has their own relationship with them. New contacts are never created silently. Known facts go to already_known, not new_memories. Contradictions = supersession (history preserved). Every follow-up needs a reason. undo_extraction_batch exists — offer it if something applied was wrong.
+
+RETRIEVAL: "who do I know in X" = search_contacts free text. "prep me for X" = get_contact, then: who they are, how you know them, last interaction, key memories, open loops, 2-3 things worth asking (especially upcoming event_dates). "losing touch" = search_contacts with lastInteractionBefore ~3 months back, ranked with reasons. Confirm actions in one or two lines, quote proposed memory texts, and never invent memories from contentless notes.`;
+}
+
+/**
  * Registers the CRM tool set on an MCP server. Shared by the local stdio
  * server and the hosted /api/mcp/[token] endpoint — one tool surface, one
  * repository layer, always scoped to a single workspace.

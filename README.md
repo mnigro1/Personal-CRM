@@ -28,7 +28,7 @@ Two ways in, one shared tool surface (`src/lib/mcp-tools.ts`):
 
 Tools: contacts/interactions/memories/follow-ups CRUD + the extraction pipeline (`list_pending_captures`, `get_extraction_context`, `submit_extraction_proposal`, `apply_extraction`, `undo_extraction_batch`) per `mcp/EXTRACTION.md`.
 
-For a hosted connector (claude.ai, ChatGPT), paste [`mcp/CLAUDE_PROJECT_INSTRUCTIONS.md`](mcp/CLAUDE_PROJECT_INSTRUCTIONS.md) into the client's project/custom instructions — it's the usage contract (date handling, capture workflow, approval gates, retrieval patterns) for any AI talking to this CRM over MCP.
+The usage contract (date handling, capture workflow, approval gates, retrieval patterns) is delivered automatically to every client via the MCP `instructions` field at initialize time, personalized with the user's timezone (`buildServerInstructions` in `src/lib/mcp-tools.ts`). [`mcp/CLAUDE_PROJECT_INSTRUCTIONS.md`](mcp/CLAUDE_PROJECT_INSTRUCTIONS.md) is the same contract in paste-into-project-instructions form — optional reinforcement for clients that under-weight the protocol field.
 
 ## Tests
 

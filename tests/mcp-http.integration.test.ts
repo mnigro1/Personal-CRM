@@ -98,6 +98,16 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     expect(names).toContain("submit_extraction_proposal");
   });
 
+  it("delivers per-user server instructions at initialize", async () => {
+    const init = await initialize(tokenA);
+    const instructions = init.body.result.instructions as string;
+    expect(instructions).toContain("personal relationship CRM");
+    // Personalized with this user's timezone (test users are UTC).
+    expect(instructions).toContain("timezone is UTC");
+    expect(instructions).toContain("Never guess between two similar people");
+    expect(instructions).toContain("apply_extraction ONLY after");
+  });
+
   it("scopes each token to its own workspace", async () => {
     const a = await rpc(tokenA, "tools/call", {
       name: "search_contacts",
