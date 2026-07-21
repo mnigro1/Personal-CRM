@@ -96,6 +96,8 @@ export async function createInteractionAction(formData: FormData) {
     rawSource,
     sourceType: (str(formData, "sourceType") ??
       "manual_note") as NewInteraction["sourceType"],
+    extractionStatus:
+      formData.get("skipExtraction") === "on" ? "skipped" : "pending",
     contactIds,
   });
 
@@ -187,6 +189,99 @@ export async function mergeTagsAction(formData: FormData) {
     throw new Error("Both source and target tags are required");
   await repoFor(workspace.id).mergeTags(sourceTagId, targetTagId);
   revalidatePath("/tags");
+}
+
+// ----------------------------------------------------------------- extraction
+
+/** Parse the review-screen form into the Selections shape. */
+function selectionsFromForm(formData: FormData) {
+  const indices = (prefix: string) =>
+    [...formData.keys()]
+      .filter((k) => k.startsWith(`${prefix}-`) && !k.includes("-edit-"))
+      .map((k) => Number(k.slice(prefix.length + 1)))
+      .filter((n) => Number.isInteger(n));
+
+  const bindingResolutions: Record<string, string> = {};
+  for (const [key, value] of formData.entries()) {
+    if (key.startsWith("bind::") && typeof value === "string" && value) {
+      bindingResolutions[key.slice("bind::".length)] = value;
+    }
+  }
+
+  const editRecord = (section: string, fields: string[]) => {
+    const out: Record<string, Record<string, string>> = {};
+    for (const field of fields) {
+      for (const [key, value] of formData.entries()) {
+        const prefix = `${section}-edit-${field}-`;
+        if (key.startsWith(prefix) && typeof value === "string" && value.trim()) {
+          const idx = key.slice(prefix.length);
+          out[idx] = { ...out[idx], [field]: value.trim() };
+        }
+      }
+    }
+    return out;
+  };
+
+  return {
+    binding_resolutions: bindingResolutions,
+    interaction_meta: formData.get("meta") === "on",
+    new_memories: indices("nm"),
+    supersessions: indices("sup"),
+    already_known: indices("ak"),
+    tags: indices("tag"),
+    follow_ups: indices("fu"),
+    contact_field_updates: indices("cfu"),
+    edits: {
+      new_memories: editRecord("nm", ["text", "category"]),
+      follow_ups: editRecord("fu", ["description"]),
+    },
+  };
+}
+
+export async function applyExtractionAction(
+  extractionId: string,
+  formData: FormData,
+) {
+  const { user, workspace } = await requireSession();
+  const repo = repoFor(workspace.id);
+  const found = await repo.getExtraction(extractionId);
+  if (!found) throw new Error("Extraction not found");
+
+  let result;
+  try {
+    result = await repo.applyExtraction(
+      extractionId,
+      selectionsFromForm(formData),
+      user.id,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Apply failed";
+    redirect(`/review/${extractionId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath("/");
+  redirect(
+    `/interactions/${found.interaction.id}?applied=${result.batchId}`,
+  );
+}
+
+export async function undoBatchAction(
+  batchId: string,
+  interactionId: string,
+) {
+  const { user, workspace } = await requireSession();
+  const result = await repoFor(workspace.id).undoBatch(batchId, user.id);
+  revalidatePath("/");
+  redirect(
+    `/interactions/${interactionId}?undone=${result.reverted}&skipped=${result.skipped}`,
+  );
+}
+
+export async function reRunExtractionAction(interactionId: string) {
+  const { workspace } = await requireSession();
+  await repoFor(workspace.id).reRunExtraction(interactionId);
+  revalidatePath(`/interactions/${interactionId}`);
+  revalidatePath("/review");
+  redirect(`/interactions/${interactionId}?rerun=1`);
 }
 
 // ------------------------------------------------------------------- settings

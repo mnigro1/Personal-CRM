@@ -57,6 +57,9 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
   afterAll(async () => {
     for (const wsId of [wsAId, wsBId]) {
       if (!wsId) continue;
+      const { revisions, extractions } = await import("@/db/schema");
+      await db.delete(revisions).where(eq(revisions.workspaceId, wsId));
+      await db.delete(extractions).where(eq(extractions.workspaceId, wsId));
       await db.delete(contactTags).where(eq(contactTags.workspaceId, wsId));
       await db.delete(followUps).where(eq(followUps.workspaceId, wsId));
       await db.delete(memories).where(eq(memories.workspaceId, wsId));

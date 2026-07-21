@@ -1,0 +1,141 @@
+{
+  "description": "Golden extraction fixtures. Each case: workspace setup, input text, interaction date, and the traits a correct proposal must have. Run per evals/README.md.",
+  "prompt_version_baseline": "v1",
+  "cases": [
+    {
+      "id": "01-single-contact-simple",
+      "setup": { "contacts": [{ "name": "Sarah Johnson", "company": "Bain" }] },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Had coffee with Sarah. She's interested in healthcare entrepreneurship and might leave consulting after HBS. We talked about catching up again after winter break.",
+      "expect": {
+        "bindings": [{ "mention": "Sarah", "status": "confident" }],
+        "new_memories_min": 2,
+        "memory_traits": ["healthcare entrepreneurship", "leave consulting"],
+        "follow_ups": [{ "due_date_hint": "2027-01", "reason_required": true }]
+      }
+    },
+    {
+      "id": "02-multi-contact-dinner",
+      "setup": {
+        "contacts": [
+          { "name": "Mike Chen", "company": "Subzero Systems" },
+          { "name": "Sarah Johnson", "company": "Bain" }
+        ]
+      },
+      "occurred_at": "2026-07-20T19:00:00Z",
+      "input": "Dinner with Mike and Sarah at Oleana. Mike's startup closed a seed round. Sarah offered to intro Mike to her LP network.",
+      "expect": {
+        "bindings": [
+          { "mention": "Mike", "status": "confident" },
+          { "mention": "Sarah", "status": "confident" }
+        ],
+        "memories_split_per_person": true,
+        "note": "Group dinner = one interaction, separate memory sets per person (spec §4)"
+      }
+    },
+    {
+      "id": "03-supersession",
+      "setup": {
+        "contacts": [{ "name": "Sarah Johnson", "company": "Bain" }],
+        "memories": [{ "contact": "Sarah Johnson", "text": "Works at Bain as a consultant", "category": "career" }]
+      },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Caught up with Sarah — big news, she left Bain last month and founded a healthcare startup.",
+      "expect": {
+        "supersessions": [{ "of_memory": "Works at Bain as a consultant", "reason_required": true }],
+        "contact_field_updates": [{ "field": "current_company" }]
+      }
+    },
+    {
+      "id": "04-restated-known-fact",
+      "setup": {
+        "contacts": [{ "name": "Sarah Johnson" }],
+        "memories": [{ "contact": "Sarah Johnson", "text": "Interested in healthcare entrepreneurship", "category": "goals" }]
+      },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Quick call with Sarah. Still very interested in healthcare entrepreneurship. Nothing else new.",
+      "expect": {
+        "already_known": [{ "of_memory": "Interested in healthcare entrepreneurship" }],
+        "new_memories_max": 0,
+        "note": "The dedup case — by the tenth interaction this must NOT create a fifth duplicate"
+      }
+    },
+    {
+      "id": "05-ambiguous-first-name",
+      "setup": {
+        "contacts": [
+          { "name": "Sarah Johnson", "company": "Bain", "tags": ["HBS"] },
+          { "name": "Sarah Chen", "location": "Denver", "company": "Subzero" }
+        ]
+      },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Sarah told me she's thinking about moving to New York next year.",
+      "expect": {
+        "bindings": [{ "mention": "Sarah", "status": "ambiguous", "candidates_min": 2 }],
+        "note": "Never guess between two plausible people. Candidates need hints."
+      }
+    },
+    {
+      "id": "06-unknown-person",
+      "setup": { "contacts": [] },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Met Jordan Rivers at the HBS water-infrastructure conference. He runs a wastewater treatment business in Ohio and is looking at search funds. Great chat, want to stay in touch.",
+      "expect": {
+        "bindings": [{ "mention": "Jordan", "status": "new", "new_contact_fields": ["first_name", "last_name"] }],
+        "note": "Proposed inline, never created silently — blocks until confirmed"
+      }
+    },
+    {
+      "id": "07-relative-dates",
+      "setup": { "contacts": [{ "name": "Mike Chen" }] },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Mike says he's moving to Denver next spring, and his lease ends in September.",
+      "expect": {
+        "memory_event_dates": [
+          { "contains": "Denver", "event_date": "2027-03-01", "precision": "quarter|month" },
+          { "contains": "lease", "event_date": "2026-09-01", "precision": "month" }
+        ],
+        "note": "Anchored to interaction date + user timezone; 'next spring' from July 2026 = spring 2027"
+      }
+    },
+    {
+      "id": "08-spouse-is-memory-not-contact",
+      "setup": { "contacts": [{ "name": "Mike Chen" }] },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Mike's wife Emily is finishing her medical residency at Mass General. They're expecting their first kid in December.",
+      "expect": {
+        "bindings": [{ "mention": "Mike", "status": "confident" }],
+        "no_new_contact_for": "Emily",
+        "memory_traits": ["Emily", "residency", "December"],
+        "note": "Mentioned-but-not-present people become memories on the primary contact"
+      }
+    },
+    {
+      "id": "09-no-extractable-facts",
+      "setup": { "contacts": [{ "name": "Sarah Johnson" }] },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Rescheduling note to self: Sarah moved our coffee from Tuesday to Thursday.",
+      "expect": {
+        "new_memories_max": 0,
+        "follow_ups_max": 0,
+        "note": "A note with no durable facts is a valid outcome — don't invent content"
+      }
+    },
+    {
+      "id": "10-tag-reuse",
+      "setup": {
+        "contacts": [{ "name": "Jordan Rivers" }],
+        "tags": ["Healthcare", "Search Fund", "Boston"]
+      },
+      "occurred_at": "2026-07-20T14:00:00Z",
+      "input": "Jordan confirmed he's raising a search fund focused on healthcare services businesses.",
+      "expect": {
+        "tags": [
+          { "name_matches_existing": "Search Fund", "is_new": false },
+          { "name_matches_existing": "Healthcare", "is_new": false }
+        ],
+        "note": "Reuse existing tags — 'healthcare services' should map to Healthcare, not a new tag"
+      }
+    }
+  ]
+}
