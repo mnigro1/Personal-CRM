@@ -189,6 +189,25 @@ export const verificationTokens = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// MCP access tokens — each user's AI connects with their own token, resolved
+// server-side to their workspace only. Tokens stored as SHA-256 hashes.
+// ---------------------------------------------------------------------------
+
+export const mcpTokens = pgTable("mcp_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  label: text("label").notNull(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Contacts
 // ---------------------------------------------------------------------------
 

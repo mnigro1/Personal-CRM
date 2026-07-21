@@ -1,0 +1,340 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { interactionType, memoryCategory, sourceType } from "@/db/schema";
+import type { Repo } from "@/db/repo";
+
+/**
+ * The extraction contract, inlined for remote AI clients (claude.ai,
+ * ChatGPT) that can't read mcp/EXTRACTION.md from the repo. Keep in sync
+ * with that file and PROMPT_VERSION.
+ */
+const EXTRACTION_RULES = `You are the extraction engine. Turn the raw interaction text into a PROPOSAL via submit_extraction_proposal — never write extracted facts directly; the user approves on the review screen or in chat.
+Proposal JSON shape:
+{
+ "interaction": {"type"?, "occurred_at"?, "location"?, "summary"?},
+ "contact_bindings": [{"mention", "status": "confident"|"ambiguous"|"new", "contact_id"? (uuid, when confident), "candidates"?: [{"contact_id","hint"}] (when ambiguous), "confidence"?, "new_contact"?: {"first_name", "last_name"?, "current_company"?, "current_role"?, "location"?} (when new)}],
+ "new_memories": [{"contact": uuid-or-mention, "text", "category": one of career|education|family|interests|goals|geography|projects|personal|preferences|opportunities|other, "event_date"?: "YYYY-MM-DD", "event_date_precision"?: exact|month|quarter|year|none}],
+ "supersessions": [{"existing_memory_id", "reason", "replacement_memory_index"}],
+ "already_known": [{"existing_memory_id", "restated"?}],
+ "tags": [{"contact": uuid-or-mention, "name", "is_new"?}],
+ "follow_ups": [{"contact": uuid-or-mention, "description", "reason" (REQUIRED), "due_date"?, "priority"?}],
+ "contact_field_updates": [{"contact_id", "field": current_company|current_role|location|phone|linkedin_url|website, "old_value"?, "new_value"}]
+}
+Rules: NEVER guess between two plausible people — return status "ambiguous" with candidate hints. Mentioned-but-not-present people (spouse, colleague) become memories on the primary contact, NOT new contacts, unless the text implies the user has a direct relationship. Facts already in currentMemories go in already_known, not new_memories. Contradictions pair a new memory with a supersession (history is preserved). Resolve relative dates ("next spring") to absolute event_date using the interaction date and userTimezone, with honest precision. Reuse existingTags loosely ("healthcare" ≈ "Healthcare"); is_new only when nothing fits. Memories are single durable third-person facts, not conversation summaries. A note with no extractable facts is a valid outcome — don't invent content.`;
+
+/**
+ * Registers the CRM tool set on an MCP server. Shared by the local stdio
+ * server and the hosted /api/mcp/[token] endpoint — one tool surface, one
+ * repository layer, always scoped to a single workspace.
+ */
+export function registerCrmTools(
+  server: McpServer,
+  repo: Repo,
+  actorUserId: string,
+) {
+  const json = (data: unknown) => ({
+    content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
+  });
+
+  server.registerTool(
+    "search_contacts",
+    {
+      description:
+        "Search contacts in the workspace. All filters optional; returns matching contacts with their tags.",
+      inputSchema: {
+        q: z.string().optional().describe("Free text across names, notes, memories, company"),
+        location: z.string().optional(),
+        company: z.string().optional(),
+        relationshipCategory: z.string().optional(),
+        hasOpenFollowUps: z.boolean().optional(),
+        lastInteractionBefore: z.string().optional().describe("ISO date — dormancy queries: contacts not spoken to since"),
+        lastInteractionAfter: z.string().optional().describe("ISO date"),
+      },
+    },
+    async (args) => {
+      const rows = await repo.listContacts({
+        q: args.q,
+        location: args.location,
+        company: args.company,
+        relationshipCategory: args.relationshipCategory,
+        hasOpenFollowUps: args.hasOpenFollowUps,
+        lastInteractionBefore: args.lastInteractionBefore
+          ? new Date(args.lastInteractionBefore)
+          : undefined,
+        lastInteractionAfter: args.lastInteractionAfter
+          ? new Date(args.lastInteractionAfter)
+          : undefined,
+      });
+      return json(
+        rows.map((c) => ({
+          id: c.id,
+          name: `${c.preferredName ?? c.firstName} ${c.lastName ?? ""}`.trim(),
+          company: c.currentCompany,
+          role: c.currentRole,
+          location: c.location,
+          tags: c.tags.map((t) => t.name),
+          lastInteractionDate: c.lastInteractionDate,
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_contact",
+    {
+      description:
+        "Full record for one contact: fields, memories, interactions (with raw source), open follow-ups, tags.",
+      inputSchema: { contactId: z.string().uuid() },
+    },
+    async ({ contactId }) => {
+      const contact = await repo.getContact(contactId);
+      if (!contact) return json({ error: "Contact not found" });
+      return json(contact);
+    },
+  );
+
+  server.registerTool(
+    "create_contact",
+    {
+      description: "Create a new contact in the workspace.",
+      inputSchema: {
+        firstName: z.string(),
+        lastName: z.string().optional(),
+        preferredName: z.string().optional(),
+        emails: z.array(z.string()).optional(),
+        phone: z.string().optional(),
+        currentCompany: z.string().optional(),
+        currentRole: z.string().optional(),
+        location: z.string().optional(),
+        linkedinUrl: z.string().optional(),
+        website: z.string().optional(),
+        howWeMet: z.string().optional(),
+        dateFirstMet: z.string().optional().describe("YYYY-MM-DD"),
+        relationshipCategory: z.string().optional(),
+        notes: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+      },
+    },
+    async ({ tags: tagNames, emails, ...fields }) => {
+      const contact = await repo.createContact({
+        ...fields,
+        emails: emails ?? [],
+      });
+      if (tagNames?.length) await repo.setContactTags(contact.id, tagNames);
+      return json({ created: true, contactId: contact.id });
+    },
+  );
+
+  server.registerTool(
+    "log_interaction",
+    {
+      description:
+        "Persist an interaction (raw notes stored verbatim, persist-first). Detects duplicate pastes by content hash — if duplicate, returns the existing interaction instead of creating.",
+      inputSchema: {
+        rawSource: z.string().describe("The raw notes/transcript — stored immutably"),
+        occurredAt: z.string().describe("ISO datetime the interaction happened"),
+        type: z.enum(interactionType.enumValues).default("other"),
+        sourceType: z.enum(sourceType.enumValues).default("manual_note"),
+        location: z.string().optional(),
+        contactIds: z.array(z.string().uuid()).describe("Contacts who were present"),
+      },
+    },
+    async (args) => {
+      const result = await repo.createInteraction({
+        rawSource: args.rawSource,
+        occurredAt: new Date(args.occurredAt),
+        type: args.type,
+        sourceType: args.sourceType,
+        location: args.location,
+        contactIds: args.contactIds,
+        // Chat captures enter the extraction pipeline.
+        extractionStatus: "pending",
+      });
+      return json({
+        duplicate: result.duplicate,
+        interactionId: result.interaction.id,
+        next: result.duplicate
+          ? "Already saved — no new capture created."
+          : "Saved. Run get_extraction_context and submit a proposal.",
+      });
+    },
+  );
+
+  // --------------------------------------------------------------------------
+  // Extraction pipeline: the connected AI is the extractor. Workflow:
+  // list_pending_captures → get_extraction_context → submit_extraction_proposal
+  // → user approves (web review screen, or in chat via apply_extraction).
+  // --------------------------------------------------------------------------
+
+  server.registerTool(
+    "list_pending_captures",
+    {
+      description:
+        "Interactions awaiting AI extraction (extraction_status = pending). Process each with get_extraction_context + submit_extraction_proposal.",
+      inputSchema: {},
+    },
+    async () => {
+      const rows = await repo.listPendingCaptures();
+      return json(
+        rows.map((i) => ({
+          interactionId: i.id,
+          occurredAt: i.occurredAt,
+          type: i.type,
+          preview: i.rawSource.slice(0, 200),
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_extraction_context",
+    {
+      description:
+        "Everything needed to extract one interaction: raw source, user timezone (anchor all relative dates to it), contact roster for entity resolution, current memories of linked contacts (facts already known), existing tags (reuse, don't invent), open follow-ups, and the extraction rules to follow. Then call submit_extraction_proposal.",
+      inputSchema: { interactionId: z.string().uuid() },
+    },
+    async ({ interactionId }) => {
+      const context = await repo.getExtractionContext(interactionId);
+      if (!context) return json({ error: "Interaction not found" });
+      return json({ ...context, instructions: EXTRACTION_RULES });
+    },
+  );
+
+  server.registerTool(
+    "submit_extraction_proposal",
+    {
+      description:
+        "Stage an extraction proposal for user review (never applies anything directly). Follow the rules and JSON shape from get_extraction_context's instructions. Returns dedup flags and blocking items (ambiguous/new bindings) — relay those to the user. The user approves on the web review screen, or in chat via apply_extraction.",
+      inputSchema: {
+        interactionId: z.string().uuid(),
+        proposal: z
+          .record(z.string(), z.unknown())
+          .describe("Proposal JSON per the extraction instructions"),
+        model: z.string().default("ai-via-mcp").describe("Your model id"),
+      },
+    },
+    async ({ interactionId, proposal, model }) => {
+      try {
+        const { extraction, staged } = await repo.saveProposal(
+          interactionId,
+          proposal,
+          { model },
+        );
+        const blocking = staged.proposal.contact_bindings.filter(
+          (b) => b.status !== "confident",
+        );
+        return json({
+          extractionId: extraction.id,
+          attempt: extraction.attempt,
+          reviewUrl: `/review/${extraction.id}`,
+          probableDuplicates: staged.flags.new_memories,
+          blockingBindings: blocking.map((b) => ({
+            mention: b.mention,
+            status: b.status,
+            candidates: b.candidates,
+          })),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await repo.markExtractionFailed(interactionId, message, { model });
+        return json({
+          error: `Proposal rejected: ${message}`,
+          note: "Capture is safe; fix the proposal and retry (interaction is marked failed until a valid proposal lands).",
+        });
+      }
+    },
+  );
+
+  server.registerTool(
+    "apply_extraction",
+    {
+      description:
+        "Apply an approved subset of a staged proposal — ONLY after the user has explicitly approved the items in chat. Selections use array indices from the proposal; binding_resolutions maps each ambiguous/new mention to a contact UUID, 'create', or 'skip'. Every change is revision-logged under a batch id; undo is always available.",
+      inputSchema: {
+        extractionId: z.string().uuid(),
+        selections: z
+          .record(z.string(), z.unknown())
+          .describe(
+            "{ binding_resolutions?, interaction_meta?, new_memories?: number[], supersessions?, already_known?, tags?, follow_ups?, contact_field_updates?, edits? }",
+          ),
+      },
+    },
+    async ({ extractionId, selections }) => {
+      const result = await repo.applyExtraction(
+        extractionId,
+        selections,
+        actorUserId,
+      );
+      return json(result);
+    },
+  );
+
+  server.registerTool(
+    "undo_extraction_batch",
+    {
+      description:
+        "Undo an applied extraction batch. Reverts every change that hasn't been edited since; reports reverted/skipped counts. The proposal re-opens for re-apply.",
+      inputSchema: { batchId: z.string().uuid() },
+    },
+    async ({ batchId }) => json(await repo.undoBatch(batchId, actorUserId)),
+  );
+
+  server.registerTool(
+    "add_memory",
+    {
+      description:
+        "Attach a structured memory (fact) to a contact. eventDate is when the thing happens/happened, resolved to an absolute date.",
+      inputSchema: {
+        contactId: z.string().uuid(),
+        text: z.string(),
+        category: z.enum(memoryCategory.enumValues).default("other"),
+        eventDate: z.string().optional().describe("YYYY-MM-DD"),
+        eventDatePrecision: z.enum(["exact", "month", "quarter", "year", "none"]).default("none"),
+        sourceInteractionId: z.string().uuid().optional(),
+      },
+    },
+    async (args) => {
+      const memory = await repo.addMemory({ ...args, createdBy: "ai" });
+      return json({ created: true, memoryId: memory.id });
+    },
+  );
+
+  server.registerTool(
+    "list_follow_ups",
+    {
+      description: "List all open follow-ups in the workspace, with their contacts.",
+      inputSchema: {},
+    },
+    async () => json(await repo.listOpenFollowUps()),
+  );
+
+  server.registerTool(
+    "add_follow_up",
+    {
+      description: "Create a follow-up for a contact. reason is required — always explain why.",
+      inputSchema: {
+        contactId: z.string().uuid(),
+        description: z.string(),
+        reason: z.string(),
+        dueDate: z.string().optional().describe("YYYY-MM-DD"),
+        priority: z.enum(["low", "medium", "high"]).default("medium"),
+      },
+    },
+    async (args) => {
+      const followUp = await repo.addFollowUp({ ...args, createdBy: "ai" });
+      return json({ created: true, followUpId: followUp.id });
+    },
+  );
+
+  server.registerTool(
+    "complete_follow_up",
+    {
+      description: "Mark a follow-up as completed.",
+      inputSchema: { followUpId: z.string().uuid() },
+    },
+    async ({ followUpId }) => {
+      const followUp = await repo.completeFollowUp(followUpId);
+      return json(followUp ? { completed: true } : { error: "Not found" });
+    },
+  );
+}
