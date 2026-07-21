@@ -193,6 +193,46 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     expect(resolved.id).toBe(venture.id);
   });
 
+  it("finds similar contacts and duplicate pairs", async () => {
+    const original = await repoA.createContact({
+      firstName: "Jonathan",
+      lastName: "Smithfield",
+      currentCompany: "Smithfield Widgets",
+    });
+
+    // Near-identical name → similar match.
+    const similar = await repoA.findSimilarContacts("Jonathon", "Smithfield");
+    expect(similar.map((s) => s.id)).toContain(original.id);
+
+    // Same first name, no last name — the "Matt" vs "Matt Weinstein" case.
+    const firstNameOnly = await repoA.findSimilarContacts("Jonathan");
+    expect(firstNameOnly.map((s) => s.id)).toContain(original.id);
+
+    // Pair scan sees a duplicate once a second Jonathan exists.
+    const dupe = await repoA.createContact({ firstName: "Jonathan", lastName: "Smithfield" });
+    const pairs = await repoA.findDuplicateContactPairs();
+    expect(
+      pairs.some(
+        (p) =>
+          (p.aId === original.id && p.bId === dupe.id) ||
+          (p.aId === dupe.id && p.bId === original.id),
+      ),
+    ).toBe(true);
+
+    // B's workspace sees none of it.
+    expect(await repoB.findSimilarContacts("Jonathan", "Smithfield")).toHaveLength(0);
+
+    await repoA.softDeleteContact(dupe.id);
+  });
+
+  it("lists tags with contact counts", async () => {
+    const c = await repoA.createContact({ firstName: "TagCount" });
+    await repoA.setContactTags(c.id, ["countme", "countme2"]);
+    const withCounts = await repoA.listTagsWithCounts();
+    const countme = withCounts.find((t) => t.normalizedName === "countme");
+    expect(countme?.contactCount).toBe(1);
+  });
+
   it("soft-deleted contacts disappear from reads", async () => {
     const contact = await repoA.createContact({ firstName: "Ghost" });
     await repoA.softDeleteContact(contact.id);

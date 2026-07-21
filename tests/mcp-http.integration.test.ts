@@ -161,6 +161,23 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     expect(payload2.action).toBeUndefined();
   });
 
+  it("create_contact blocks likely duplicates until forced", async () => {
+    const blocked = await rpc(tokenA, "tools/call", {
+      name: "create_contact",
+      arguments: { firstName: "AliceOnly" },
+    }, 8);
+    const payload = JSON.parse(blocked.body.result.content[0].text);
+    expect(payload.blocked).toBe(true);
+    expect(payload.possibleDuplicates[0].name).toBe("AliceOnly");
+
+    const forced = await rpc(tokenA, "tools/call", {
+      name: "create_contact",
+      arguments: { firstName: "AliceOnly", force: true },
+    }, 9);
+    const created = JSON.parse(forced.body.result.content[0].text);
+    expect(created.created).toBe(true);
+  });
+
   it("revoked tokens stop working immediately", async () => {
     const [row] = await listMcpTokens(userBId);
     await revokeMcpToken(userBId, row.id);
