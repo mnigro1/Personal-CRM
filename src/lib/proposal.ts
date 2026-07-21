@@ -129,11 +129,16 @@ export const proposalSchema = z.object({
 export type Proposal = z.infer<typeof proposalSchema>;
 export type ContactBinding = z.infer<typeof contactBindingSchema>;
 
-/** Dedup flags computed at save time (trigram similarity vs existing memories). */
+/** Dedup flags computed at save time (trigram similarity vs existing records). */
 export type ProposalFlags = {
   new_memories: Record<
     number,
     { probableDuplicate: boolean; matchMemoryId: string; matchText: string; similarity: number }
+  >;
+  /** Existing contacts that a proposed "new" person may already be. Keyed by mention. */
+  new_contacts?: Record<
+    string,
+    { contactId: string; name: string; company: string | null; similarity: number }[]
   >;
 };
 

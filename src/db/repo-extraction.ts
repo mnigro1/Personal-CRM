@@ -32,6 +32,19 @@ type BaseRepo = {
     name: string,
     createdBy?: "user" | "ai",
   ): Promise<typeof tags.$inferSelect>;
+  findSimilarContacts(
+    firstName: string,
+    lastName?: string | null,
+    threshold?: number,
+  ): Promise<
+    {
+      id: string;
+      firstName: string;
+      lastName: string | null;
+      currentCompany: string | null;
+      similarity: number;
+    }[]
+  >;
 };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -411,6 +424,24 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             similarity: Number(match.similarity),
           };
         }
+      }
+
+      // A proposed "new" person may already exist — surface candidates now,
+      // while the user is deciding, rather than creating a second record.
+      for (const b of proposal.contact_bindings) {
+        if (b.status !== "new" || !b.new_contact) continue;
+        const similar = await base.findSimilarContacts(
+          b.new_contact.first_name,
+          b.new_contact.last_name,
+        );
+        if (similar.length === 0) continue;
+        flags.new_contacts ??= {};
+        flags.new_contacts[b.mention] = similar.map((s) => ({
+          contactId: s.id,
+          name: `${s.firstName} ${s.lastName ?? ""}`.trim(),
+          company: s.currentCompany,
+          similarity: Number(s.similarity),
+        }));
       }
 
       const staged: StagedProposal = { proposal, flags };

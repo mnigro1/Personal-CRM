@@ -365,6 +365,48 @@ describe.skipIf(!hasDb)("extraction pipeline (integration)", async () => {
     expect(await otherRepo.updateContactSummary(contact.id, "hijack")).toBeNull();
   });
 
+  it("flags possible duplicates on proposed new contacts", async () => {
+    await repo.createContact({
+      firstName: "Priyanka",
+      lastName: "Raman",
+      currentCompany: "Northwind",
+    });
+    const interaction = await mkInteraction(`new contact dupe ${run}`);
+    const { staged } = await repo.saveProposal(
+      interaction.id,
+      {
+        contact_bindings: [
+          {
+            mention: "Priyanka",
+            status: "new",
+            new_contact: { first_name: "Priyanka", last_name: "Raman" },
+          },
+        ],
+      },
+      { model: "test" },
+    );
+    const dupes = staged.flags.new_contacts?.["Priyanka"];
+    expect(dupes?.[0].name).toBe("Priyanka Raman");
+    expect(dupes?.[0].company).toBe("Northwind");
+  });
+
+  it("open follow-ups exclude soft-deleted contacts", async () => {
+    const contact = await repo.createContact({ firstName: "GhostFollowUp" });
+    await repo.addFollowUp({
+      contactId: contact.id,
+      description: "should vanish with the contact",
+      reason: "test",
+    });
+    expect(
+      (await repo.listOpenFollowUps()).some((f) => f.contact.id === contact.id),
+    ).toBe(true);
+
+    await repo.softDeleteContact(contact.id);
+    expect(
+      (await repo.listOpenFollowUps()).some((f) => f.contact.id === contact.id),
+    ).toBe(false);
+  });
+
   it("marks extraction failed without touching the capture", async () => {
     const interaction = await mkInteraction(`failure test ${run}`);
     await repo.markExtractionFailed(interaction.id, "malformed JSON", { model: "test" });

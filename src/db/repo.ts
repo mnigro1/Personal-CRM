@@ -1036,6 +1036,8 @@ export function repoFor(workspaceId: string) {
           and(
             eq(followUps.workspaceId, workspaceId),
             eq(followUps.status, "open"),
+            // Deleting a contact must not leave ghost follow-ups behind.
+            isNull(contacts.deletedAt),
           ),
         )
         .orderBy(asc(followUps.dueDate));
