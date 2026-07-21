@@ -28,6 +28,8 @@ Two ways in, one shared tool surface (`src/lib/mcp-tools.ts`):
 
 Tools: contacts/interactions/memories/follow-ups CRUD + the extraction pipeline (`list_pending_captures`, `get_extraction_context`, `submit_extraction_proposal`, `apply_extraction`, `undo_extraction_batch`) per `mcp/EXTRACTION.md`.
 
+For a hosted connector (claude.ai, ChatGPT), paste [`mcp/CLAUDE_PROJECT_INSTRUCTIONS.md`](mcp/CLAUDE_PROJECT_INSTRUCTIONS.md) into the client's project/custom instructions — it's the usage contract (date handling, capture workflow, approval gates, retrieval patterns) for any AI talking to this CRM over MCP.
+
 ## Tests
 
 `npm test` — unit tests always run; integration tests (workspace isolation, dedup, tag merge, last-interaction recompute) run when `DATABASE_URL` is set.
