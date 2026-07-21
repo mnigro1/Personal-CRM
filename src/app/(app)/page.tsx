@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ClickableRow } from "@/components/clickable-row";
 import { repoFor, type ContactFilters } from "@/db/repo";
 import { requireSession } from "@/lib/session";
 import { Badge } from "@/components/ui/badge";
@@ -112,22 +113,21 @@ export default async function ContactsPage({
             <TableHead>Location</TableHead>
             <TableHead>Tags</TableHead>
             <TableHead>Last interaction</TableHead>
+            <TableHead>LinkedIn</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
+              <TableCell colSpan={6} className="text-center text-muted-foreground">
                 No contacts yet.
               </TableCell>
             </TableRow>
           )}
           {rows.map((c) => (
-            <TableRow key={c.id}>
-              <TableCell>
-                <Link href={`/contacts/${c.id}`} className="font-medium hover:underline">
-                  {c.preferredName ?? c.firstName} {c.lastName ?? ""}
-                </Link>
+            <ClickableRow key={c.id} href={`/contacts/${c.id}`}>
+              <TableCell className="font-medium">
+                {c.preferredName ?? c.firstName} {c.lastName ?? ""}
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {[c.currentRole, c.currentCompany].filter(Boolean).join(" @ ")}
@@ -145,7 +145,19 @@ export default async function ContactsPage({
                   ? new Date(c.lastInteractionDate).toLocaleDateString()
                   : "—"}
               </TableCell>
-            </TableRow>
+              <TableCell>
+                {c.linkedinUrl && (
+                  <a
+                    href={c.linkedinUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-muted-foreground underline hover:text-foreground"
+                  >
+                    Profile ↗
+                  </a>
+                )}
+              </TableCell>
+            </ClickableRow>
           ))}
         </TableBody>
       </Table>

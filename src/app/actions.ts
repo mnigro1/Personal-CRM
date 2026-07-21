@@ -181,6 +181,14 @@ export async function completeFollowUpAction(
 
 // ----------------------------------------------------------------------- tags
 
+export async function createTagAction(formData: FormData) {
+  const { workspace } = await requireSession();
+  const name = str(formData, "name");
+  if (!name) throw new Error("Tag name is required");
+  await repoFor(workspace.id).findOrCreateTag(name);
+  revalidatePath("/tags");
+}
+
 export async function mergeTagsAction(formData: FormData) {
   const { workspace } = await requireSession();
   const sourceTagId = str(formData, "sourceTagId");

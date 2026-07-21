@@ -2,6 +2,7 @@ import Link from "next/link";
 import { repoFor } from "@/db/repo";
 import { requireSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
+import { ClickableRow } from "@/components/clickable-row";
 import {
   Table,
   TableBody,
@@ -41,18 +42,14 @@ export default async function InteractionsPage() {
             </TableRow>
           )}
           {rows.map((i) => (
-            <TableRow key={i.id}>
-              <TableCell>
-                <Link href={`/interactions/${i.id}`} className="hover:underline">
-                  {new Date(i.occurredAt).toLocaleString()}
-                </Link>
-              </TableCell>
+            <ClickableRow key={i.id} href={`/interactions/${i.id}`}>
+              <TableCell>{new Date(i.occurredAt).toLocaleString()}</TableCell>
               <TableCell>{i.type}</TableCell>
               <TableCell>{i.location}</TableCell>
               <TableCell className="max-w-md truncate text-sm text-muted-foreground">
                 {i.rawSource}
               </TableCell>
-            </TableRow>
+            </ClickableRow>
           ))}
         </TableBody>
       </Table>

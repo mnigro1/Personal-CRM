@@ -8,6 +8,7 @@ import {
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-button";
 import {
   Card,
   CardContent,
@@ -112,9 +113,13 @@ export default async function InteractionPage({
             </form>
           )}
           <form action={deleteInteractionAction.bind(null, interaction.id)}>
-            <Button variant="destructive" size="sm" type="submit">
+            <ConfirmButton
+              variant="destructive"
+              size="sm"
+              message="Delete this interaction? Its raw notes will be permanently removed."
+            >
               Delete
-            </Button>
+            </ConfirmButton>
           </form>
         </div>
       </div>
