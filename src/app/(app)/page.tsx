@@ -54,7 +54,7 @@ export default async function ContactsPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Contacts</h1>
-        <Button render={<Link href="/contacts/new" />}>Add contact</Button>
+        <Button nativeButton={false} render={<Link href="/contacts/new" />}>Add contact</Button>
       </div>
 
       <form className="grid grid-cols-2 gap-3 rounded-lg border p-4 md:grid-cols-4">
@@ -97,7 +97,7 @@ export default async function ContactsPage({
         <div className="col-span-2 flex gap-2 md:col-span-4">
           <Button type="submit" size="sm">Filter</Button>
           {hasFilters && (
-            <Button variant="ghost" size="sm" render={<Link href="/" />}>
+            <Button nativeButton={false} variant="ghost" size="sm" render={<Link href="/" />}>
               Clear
             </Button>
           )}

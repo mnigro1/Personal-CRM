@@ -1,0 +1,1 @@
+ALTER TABLE "extractions" ADD COLUMN "batch_id" uuid;

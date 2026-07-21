@@ -82,6 +82,10 @@ export default async function NewInteractionPage({
             ))}
           </div>
         </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" name="skipExtraction" />
+          Skip AI extraction (just store the note)
+        </label>
         <Button type="submit">Save interaction</Button>
       </form>
     </div>

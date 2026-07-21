@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { signOut } from "@/auth";
+import { repoFor } from "@/db/repo";
 import { requireSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 
@@ -8,7 +9,13 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user } = await requireSession();
+  const { user, workspace } = await requireSession();
+  const repo = repoFor(workspace.id);
+  const [pending, proposed] = await Promise.all([
+    repo.listPendingCaptures(),
+    repo.listProposedExtractions(),
+  ]);
+  const reviewCount = pending.length + proposed.length;
 
   return (
     <div className="min-h-screen">
@@ -23,6 +30,14 @@ export default async function AppLayout({
             </Link>
             <Link href="/interactions" className="text-sm text-muted-foreground hover:text-foreground">
               Interactions
+            </Link>
+            <Link href="/review" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+              Review
+              {reviewCount > 0 && (
+                <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+                  {reviewCount}
+                </span>
+              )}
             </Link>
             <Link href="/tags" className="text-sm text-muted-foreground hover:text-foreground">
               Tags

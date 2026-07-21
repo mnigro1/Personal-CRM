@@ -415,6 +415,8 @@ export const extractions = pgTable("extractions", {
   status: extractionRunStatus("status").notNull().default("pending"),
   error: text("error"),
   attempt: integer("attempt").notNull().default(1),
+  // Set on apply; joins the extraction to its revisions batch for undo.
+  batchId: uuid("batch_id"),
   appliedAt: timestamp("applied_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

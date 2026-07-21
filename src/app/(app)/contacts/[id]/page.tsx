@@ -23,15 +23,22 @@ import { requireSession } from "@/lib/session";
 
 export default async function ContactPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ history?: string }>;
 }) {
   const { id } = await params;
+  const { history } = await searchParams;
+  const showHistory = history === "1";
   const { workspace } = await requireSession();
   const contact = await repoFor(workspace.id).getContact(id);
   if (!contact) notFound();
 
   const currentMemories = contact.memories.filter((m) => m.status === "current");
+  const historicalMemories = contact.memories.filter(
+    (m) => m.status === "superseded" || m.status === "historical",
+  );
   const byCategory = new Map<string, typeof currentMemories>();
   for (const m of currentMemories) {
     const list = byCategory.get(m.category) ?? [];
@@ -61,6 +68,7 @@ export default async function ContactPage({
         <div className="flex gap-2">
           {contact.linkedinUrl && (
             <Button
+              nativeButton={false}
               variant="outline"
               size="sm"
               render={
@@ -71,6 +79,7 @@ export default async function ContactPage({
             </Button>
           )}
           <Button
+            nativeButton={false}
             variant="outline"
             size="sm"
             render={<Link href={`/contacts/${contact.id}/edit`} />}
@@ -96,9 +105,52 @@ export default async function ContactPage({
         {/* Memories */}
         <Card>
           <CardHeader>
-            <CardTitle>Memories</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Memories</CardTitle>
+              {historicalMemories.length > 0 && (
+                <Link
+                  href={
+                    showHistory
+                      ? `/contacts/${contact.id}`
+                      : `/contacts/${contact.id}?history=1`
+                  }
+                  className="text-xs text-muted-foreground hover:underline"
+                >
+                  {showHistory
+                    ? "Hide history"
+                    : `Show history (${historicalMemories.length})`}
+                </Link>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {showHistory && historicalMemories.length > 0 && (
+              <div className="rounded border border-dashed p-3">
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  History
+                </h3>
+                <ul className="space-y-1">
+                  {historicalMemories.map((m) => {
+                    const replacement = m.supersededByMemoryId
+                      ? contact.memories.find(
+                          (x) => x.id === m.supersededByMemoryId,
+                        )
+                      : null;
+                    return (
+                      <li key={m.id} className="text-sm text-muted-foreground">
+                        <span className="line-through">{m.text}</span>
+                        <span className="ml-1 text-xs">({m.status})</span>
+                        {replacement && (
+                          <span className="block text-xs">
+                            → now: {replacement.text}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             {byCategory.size === 0 && (
               <p className="text-sm text-muted-foreground">No memories yet.</p>
             )}
@@ -117,7 +169,7 @@ export default async function ContactPage({
                         )}
                       </span>
                       <form action={deleteMemoryAction.bind(null, contact.id, m.id)}>
-                        <button className="invisible text-muted-foreground hover:text-destructive group-hover:visible" title="Delete memory">
+                        <button className="text-muted-foreground/50 hover:text-destructive" title="Delete memory">
                           ×
                         </button>
                       </form>
@@ -187,6 +239,7 @@ export default async function ContactPage({
           <div className="flex items-center justify-between">
             <CardTitle>Interactions</CardTitle>
             <Button
+              nativeButton={false}
               size="sm"
               variant="outline"
               render={<Link href={`/interactions/new?contactId=${contact.id}`} />}

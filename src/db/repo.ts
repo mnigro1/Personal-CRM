@@ -26,6 +26,11 @@ import {
   tags,
 } from "@/db/schema";
 import { normalizeTagName, sourceHash } from "@/lib/normalize";
+import { revisions } from "@/db/schema";
+import { extractionOpsFor } from "@/db/repo-extraction";
+
+const camelToSnake = (s: string) =>
+  s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
 export type ContactFilters = {
   q?: string;
@@ -88,7 +93,32 @@ export function repoFor(workspaceId: string) {
     }
   }
 
-  return {
+  /**
+   * User-sourced change log. Field names are stored snake_case so they match
+   * revisions written by extraction apply — undo's "edited since" check
+   * compares (entity_type, entity_id, field) across both sources.
+   */
+  async function logUserRevision(row: {
+    entityType: string;
+    entityId: string;
+    field?: string | null;
+    oldValue?: unknown;
+    newValue?: unknown;
+    actorUserId?: string | null;
+  }) {
+    await db.insert(revisions).values({
+      workspaceId,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      field: row.field ? camelToSnake(row.field) : null,
+      oldValue: JSON.parse(JSON.stringify(row.oldValue ?? null)),
+      newValue: JSON.parse(JSON.stringify(row.newValue ?? null)),
+      changeSource: "user",
+      actorUserId: row.actorUserId ?? null,
+    });
+  }
+
+  const base = {
     workspaceId,
 
     // ---------------------------------------------------------------- contacts
@@ -105,6 +135,9 @@ export function repoFor(workspaceId: string) {
             ilike(contacts.preferredName, pat),
             ilike(contacts.notes, pat),
             ilike(contacts.currentCompany, pat),
+            ilike(contacts.currentRole, pat),
+            ilike(contacts.location, pat),
+            ilike(contacts.howWeMet, pat),
             exists(
               db
                 .select({ one: sql`1` })
@@ -295,12 +328,35 @@ export function repoFor(workspaceId: string) {
       return row;
     },
 
-    async updateContact(contactId: string, data: Partial<NewContact>) {
+    async updateContact(
+      contactId: string,
+      data: Partial<NewContact>,
+      actorUserId?: string,
+    ) {
+      const [old] = await db
+        .select()
+        .from(contacts)
+        .where(and(eq(contacts.id, contactId), wsContacts()));
+      if (!old) return null;
       const [row] = await db
         .update(contacts)
         .set({ ...data, updatedAt: new Date() })
         .where(and(eq(contacts.id, contactId), wsContacts()))
         .returning();
+      for (const key of Object.keys(data) as (keyof NewContact)[]) {
+        const before = old[key];
+        const after = data[key];
+        if (JSON.stringify(before ?? null) !== JSON.stringify(after ?? null)) {
+          await logUserRevision({
+            entityType: "contact",
+            entityId: contactId,
+            field: key,
+            oldValue: before,
+            newValue: after,
+            actorUserId,
+          });
+        }
+      }
       return row ?? null;
     },
 
@@ -513,11 +569,26 @@ export function repoFor(workspaceId: string) {
         location?: string | null;
         contactIds?: string[];
       },
+      actorUserId?: string,
     ) {
       const existing = await this.getInteraction(interactionId);
       if (!existing) return null;
 
       const affected = new Set(existing.contacts.map((c) => c.id));
+      const fieldChanges: { field: string; oldValue: unknown; newValue: unknown }[] = [];
+      if (data.type && data.type !== existing.type)
+        fieldChanges.push({ field: "type", oldValue: existing.type, newValue: data.type });
+      if (
+        data.occurredAt &&
+        data.occurredAt.getTime() !== existing.occurredAt.getTime()
+      )
+        fieldChanges.push({
+          field: "occurredAt",
+          oldValue: existing.occurredAt.toISOString(),
+          newValue: data.occurredAt.toISOString(),
+        });
+      if (data.location !== undefined && data.location !== existing.location)
+        fieldChanges.push({ field: "location", oldValue: existing.location, newValue: data.location });
 
       await db.transaction(async (tx) => {
         await tx
@@ -550,6 +621,31 @@ export function repoFor(workspaceId: string) {
           }
         }
       });
+
+      for (const change of fieldChanges) {
+        await logUserRevision({
+          entityType: "interaction",
+          entityId: interactionId,
+          field: change.field,
+          oldValue: change.oldValue,
+          newValue: change.newValue,
+          actorUserId,
+        });
+      }
+      if (data.contactIds) {
+        const beforeIds = existing.contacts.map((c) => c.id).sort();
+        const afterIds = [...new Set(data.contactIds)].sort();
+        if (JSON.stringify(beforeIds) !== JSON.stringify(afterIds)) {
+          await logUserRevision({
+            entityType: "interaction_contact",
+            entityId: interactionId,
+            field: "contact",
+            oldValue: beforeIds,
+            newValue: afterIds,
+            actorUserId,
+          });
+        }
+      }
 
       await recomputeLastInteraction([...affected]);
       return this.getInteraction(interactionId);
@@ -610,6 +706,19 @@ export function repoFor(workspaceId: string) {
       return row;
     },
 
+    async getMemoriesByIds(memoryIds: string[]) {
+      if (memoryIds.length === 0) return [];
+      return db
+        .select()
+        .from(memories)
+        .where(
+          and(
+            eq(memories.workspaceId, workspaceId),
+            inArray(memories.id, memoryIds),
+          ),
+        );
+    },
+
     async updateMemory(
       memoryId: string,
       data: Partial<{
@@ -619,7 +728,15 @@ export function repoFor(workspaceId: string) {
         eventDate: string | null;
         eventDatePrecision: (typeof memories.$inferInsert)["eventDatePrecision"];
       }>,
+      actorUserId?: string,
     ) {
+      const [old] = await db
+        .select()
+        .from(memories)
+        .where(
+          and(eq(memories.id, memoryId), eq(memories.workspaceId, workspaceId)),
+        );
+      if (!old) return null;
       const [row] = await db
         .update(memories)
         .set(data)
@@ -627,15 +744,41 @@ export function repoFor(workspaceId: string) {
           and(eq(memories.id, memoryId), eq(memories.workspaceId, workspaceId)),
         )
         .returning();
+      for (const key of Object.keys(data) as (keyof typeof data)[]) {
+        if (old[key] !== data[key]) {
+          await logUserRevision({
+            entityType: "memory",
+            entityId: memoryId,
+            field: key,
+            oldValue: old[key],
+            newValue: data[key],
+            actorUserId,
+          });
+        }
+      }
       return row ?? null;
     },
 
-    async deleteMemory(memoryId: string) {
+    async deleteMemory(memoryId: string, actorUserId?: string) {
+      const [old] = await db
+        .select()
+        .from(memories)
+        .where(
+          and(eq(memories.id, memoryId), eq(memories.workspaceId, workspaceId)),
+        );
+      if (!old) return;
       await db
         .delete(memories)
         .where(
           and(eq(memories.id, memoryId), eq(memories.workspaceId, workspaceId)),
         );
+      await logUserRevision({
+        entityType: "memory",
+        entityId: memoryId,
+        oldValue: old,
+        newValue: null,
+        actorUserId,
+      });
     },
 
     // -------------------------------------------------------------- follow-ups
@@ -722,6 +865,8 @@ export function repoFor(workspaceId: string) {
         .orderBy(desc(invites.createdAt));
     },
   };
+
+  return { ...base, ...extractionOpsFor(workspaceId, base) };
 }
 
 export type Repo = ReturnType<typeof repoFor>;
