@@ -9,6 +9,7 @@ import {
 } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-button";
 import {
   Card,
   CardContent,
@@ -87,9 +88,13 @@ export default async function ContactPage({
             Edit
           </Button>
           <form action={deleteContactAction.bind(null, contact.id)}>
-            <Button variant="destructive" size="sm" type="submit">
+            <ConfirmButton
+              variant="destructive"
+              size="sm"
+              message={`Delete ${contact.preferredName ?? contact.firstName}? Their memories and interactions are archived, not destroyed.`}
+            >
               Delete
-            </Button>
+            </ConfirmButton>
           </form>
         </div>
       </div>

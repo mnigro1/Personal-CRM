@@ -1,5 +1,6 @@
-import { mergeTagsAction } from "@/app/actions";
+import { createTagAction, mergeTagsAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -17,6 +18,22 @@ export default async function TagsPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Tags</h1>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>New tag</CardTitle>
+          <CardDescription>
+            Tags are private to your workspace. Names are normalized —
+            &quot;Health-Care&quot; and &quot;healthcare&quot; are the same tag.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={createTagAction} className="flex items-center gap-3">
+            <Input name="name" placeholder="e.g. Search Fund" required className="w-64" />
+            <Button type="submit" size="sm">Create tag</Button>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
