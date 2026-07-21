@@ -53,6 +53,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       maxAge: 24 * 60 * 60,
       options: {},
       async sendVerificationRequest({ identifier, url }) {
+        // Gmail SMTP (app password): free, delivers to any recipient —
+        // unlike Resend's free tier, which only reaches the account owner.
+        if (
+          process.env.NODE_ENV === "production" &&
+          process.env.GMAIL_USER &&
+          process.env.GMAIL_APP_PASSWORD
+        ) {
+          const { createTransport } = await import("nodemailer");
+          const transporter = createTransport({
+            host: "smtp.gmail.com",
+            port: 465,
+            secure: true,
+            auth: {
+              user: process.env.GMAIL_USER,
+              pass: process.env.GMAIL_APP_PASSWORD,
+            },
+          });
+          await transporter.sendMail({
+            from: `"Personal CRM" <${process.env.GMAIL_USER}>`,
+            to: identifier,
+            subject: "Sign in to Personal CRM",
+            text: `Click to sign in:\n\n${url}\n\nThis link expires in 24 hours. If you didn't request it, ignore this email.`,
+          });
+          return;
+        }
         if (process.env.NODE_ENV === "production" && process.env.RESEND_API_KEY) {
           const res = await fetch("https://api.resend.com/emails", {
             method: "POST",
