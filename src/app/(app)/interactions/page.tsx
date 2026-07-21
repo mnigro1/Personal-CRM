@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { deleteInteractionAction } from "@/app/actions";
 import { repoFor } from "@/db/repo";
 import { requireSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,13 @@ export default async function InteractionsPage() {
             </TableRow>
           )}
           {rows.map((i) => (
-            <ClickableRow key={i.id} href={`/interactions/${i.id}`}>
+            <ClickableRow
+              key={i.id}
+              href={`/interactions/${i.id}`}
+              editHref={`/interactions/${i.id}`}
+              deleteAction={deleteInteractionAction.bind(null, i.id)}
+              deleteMessage="Delete this interaction? Its raw notes will be permanently removed."
+            >
               <TableCell>{new Date(i.occurredAt).toLocaleString()}</TableCell>
               <TableCell>{i.type}</TableCell>
               <TableCell>{i.location}</TableCell>

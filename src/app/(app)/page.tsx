@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { deleteContactAction } from "@/app/actions";
 import { ClickableRow } from "@/components/clickable-row";
 import { repoFor, type ContactFilters } from "@/db/repo";
 import { requireSession } from "@/lib/session";
@@ -125,7 +126,13 @@ export default async function ContactsPage({
             </TableRow>
           )}
           {rows.map((c) => (
-            <ClickableRow key={c.id} href={`/contacts/${c.id}`}>
+            <ClickableRow
+              key={c.id}
+              href={`/contacts/${c.id}`}
+              editHref={`/contacts/${c.id}/edit`}
+              deleteAction={deleteContactAction.bind(null, c.id)}
+              deleteMessage={`Delete ${c.preferredName ?? c.firstName}? Their memories and interactions are archived, not destroyed.`}
+            >
               <TableCell className="font-medium">
                 {c.preferredName ?? c.firstName} {c.lastName ?? ""}
               </TableCell>

@@ -1,19 +1,37 @@
 "use client";
 
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { TableRow } from "@/components/ui/table";
 
-/** A TableRow that navigates on click anywhere in the row (not just a link cell). */
+/**
+ * A table row that opens `href` on click anywhere in it, and shows a
+ * right-click menu with Open / Edit / Delete when those are provided.
+ */
 export function ClickableRow({
   href,
+  editHref,
+  deleteAction,
+  deleteMessage,
   children,
 }: {
   href: string;
+  editHref?: string;
+  deleteAction?: () => Promise<void>;
+  deleteMessage?: string;
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
 
-  return (
+  const row = (
     <TableRow
       onClick={(e) => {
         // Links/buttons inside the row keep their own behavior.
@@ -29,5 +47,38 @@ export function ClickableRow({
     >
       {children}
     </TableRow>
+  );
+
+  if (!editHref && !deleteAction) return row;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={row} />
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => router.push(href)}>
+          Open
+        </ContextMenuItem>
+        {editHref && (
+          <ContextMenuItem onClick={() => router.push(editHref)}>
+            Edit
+          </ContextMenuItem>
+        )}
+        {deleteAction && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              variant="destructive"
+              onClick={() => {
+                if (window.confirm(deleteMessage ?? "Delete this?")) {
+                  startTransition(() => deleteAction());
+                }
+              }}
+            >
+              Delete
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
