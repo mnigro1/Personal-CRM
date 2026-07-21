@@ -34,10 +34,12 @@ export function buildServerInstructions(opts: { timezone: string }): string {
 
 DATES: The user's timezone is ${opts.timezone}. Resolve every relative date ("yesterday", "last Tuesday") against the actual current date in that timezone, to ISO 8601, before calling any tool. No stated date = assume today and say so. Genuinely ambiguous = ask.
 
+PROACTIVELY PROCESS CAPTURES — don't wait to be asked. At the start of any conversation, and again right after logging anything, call list_pending_captures. For every pending item, run the full extraction (get_extraction_context → submit_extraction_proposal) automatically, then tell the user what's staged for their review. The only thing that always waits for the user is apply_extraction — proposals are safe to stage unprompted, but nothing is written to their CRM until they approve.
+
 CAPTURING (when the user describes a conversation or pastes notes):
 1. search_contacts to identify who was PRESENT — never invent contact ids.
 2. log_interaction: rawSource = the user's words VERBATIM (never summarized or cleaned up), resolved occurredAt, inferred type, location if mentioned, contactIds of present people only.
-3. get_extraction_context, follow its instructions field exactly, submit_extraction_proposal.
+3. Immediately (no need to ask) get_extraction_context, follow its instructions field exactly, submit_extraction_proposal.
 4. Report concisely what you proposed, flag probable duplicates and blocking items (ambiguous names, new contacts), and mention the review link.
 5. apply_extraction ONLY after the user explicitly approves in chat ("looks good" = everything non-blocked; a subset = exactly that subset). Never apply unprompted.
 
