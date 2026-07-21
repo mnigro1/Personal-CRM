@@ -20,9 +20,9 @@ export default async function AppLayout({
   return (
     <div className="min-h-screen">
       <header className="border-b">
-        <div className="mx-auto flex max-w-5xl items-center justify-between p-4">
-          <nav className="flex items-center gap-6">
-            <span className="cursor-default font-semibold select-none">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 p-4">
+          <nav className="flex max-w-full items-center gap-4 overflow-x-auto sm:gap-6">
+            <span className="hidden cursor-default font-semibold select-none md:inline">
               Personal CRM
             </span>
             <NavLinks reviewCount={reviewCount} />
@@ -34,7 +34,9 @@ export default async function AppLayout({
             }}
             className="flex items-center gap-3"
           >
-            <span className="text-sm text-muted-foreground">{user.email}</span>
+            <span className="hidden text-sm text-muted-foreground lg:inline">
+              {user.email}
+            </span>
             <Button variant="outline" size="sm" type="submit">
               Sign out
             </Button>

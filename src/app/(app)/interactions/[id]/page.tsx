@@ -145,7 +145,7 @@ export default async function InteractionPage({
             action={updateInteractionAction.bind(null, interaction.id)}
             className="space-y-4"
           >
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label htmlFor="type">Type</Label>
                 <select id="type" name="type" className="w-full rounded border px-2 py-2 text-sm" defaultValue={interaction.type}>

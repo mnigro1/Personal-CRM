@@ -58,7 +58,7 @@ export default async function SettingsPage({
               </code>
             </div>
           )}
-          <form action={createMcpTokenAction} className="flex items-end gap-3">
+          <form action={createMcpTokenAction} className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label htmlFor="label">Name</Label>
               <Input id="label" name="label" placeholder="e.g. My Claude" required className="w-64" />
@@ -100,7 +100,7 @@ export default async function SettingsPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={updateTimezoneAction} className="flex items-end gap-3">
+          <form action={updateTimezoneAction} className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label htmlFor="timezone">Timezone</Label>
               <Input id="timezone" name="timezone" defaultValue={user.timezone} className="w-64" />
@@ -119,7 +119,7 @@ export default async function SettingsPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <form action={createInviteAction} className="flex items-end gap-3">
+          <form action={createInviteAction} className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label htmlFor="email">Email</Label>
               <Input id="email" name="email" type="email" required className="w-64" placeholder="sister@example.com" />
