@@ -706,6 +706,41 @@ export function repoFor(workspaceId: string) {
       return row;
     },
 
+    /**
+     * Every revision that ever touched this contact: the contact row itself,
+     * its tags, its memories and follow-ups (including deleted ones, matched
+     * via the snapshot stored in the revision), newest first.
+     */
+    async getRevisionsForContact(contactId: string, limit = 200) {
+      const memoryIdsQ = db
+        .select({ id: memories.id })
+        .from(memories)
+        .where(eq(memories.contactId, contactId));
+      const followUpIdsQ = db
+        .select({ id: followUps.id })
+        .from(followUps)
+        .where(eq(followUps.contactId, contactId));
+
+      return db
+        .select()
+        .from(revisions)
+        .where(
+          and(
+            eq(revisions.workspaceId, workspaceId),
+            or(
+              eq(revisions.entityId, contactId),
+              inArray(revisions.entityId, memoryIdsQ),
+              inArray(revisions.entityId, followUpIdsQ),
+              // Deleted memories/follow-ups: their rows are gone, but the
+              // revision snapshots carry the contact id.
+              sql`(${revisions.oldValue} ->> 'contactId' = ${contactId} OR ${revisions.newValue} ->> 'contactId' = ${contactId})`,
+            ),
+          ),
+        )
+        .orderBy(desc(revisions.createdAt))
+        .limit(limit);
+    },
+
     async getMemoriesByIds(memoryIds: string[]) {
       if (memoryIds.length === 0) return [];
       return db

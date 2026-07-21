@@ -107,20 +107,28 @@ export default async function ContactPage({
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Memories</CardTitle>
-              {historicalMemories.length > 0 && (
+              <div className="flex items-center gap-3">
+                {historicalMemories.length > 0 && (
+                  <Link
+                    href={
+                      showHistory
+                        ? `/contacts/${contact.id}`
+                        : `/contacts/${contact.id}?history=1`
+                    }
+                    className="text-xs text-muted-foreground hover:underline"
+                  >
+                    {showHistory
+                      ? "Hide history"
+                      : `Show history (${historicalMemories.length})`}
+                  </Link>
+                )}
                 <Link
-                  href={
-                    showHistory
-                      ? `/contacts/${contact.id}`
-                      : `/contacts/${contact.id}?history=1`
-                  }
+                  href={`/contacts/${contact.id}/history`}
                   className="text-xs text-muted-foreground hover:underline"
                 >
-                  {showHistory
-                    ? "Hide history"
-                    : `Show history (${historicalMemories.length})`}
+                  Full history →
                 </Link>
-              )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">

@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { signOut } from "@/auth";
+import { NavLinks } from "@/components/nav-links";
 import { repoFor } from "@/db/repo";
 import { requireSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
@@ -22,29 +22,10 @@ export default async function AppLayout({
       <header className="border-b">
         <div className="mx-auto flex max-w-5xl items-center justify-between p-4">
           <nav className="flex items-center gap-6">
-            <Link href="/" className="font-semibold">
+            <span className="cursor-default font-semibold select-none">
               Personal CRM
-            </Link>
-            <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
-              Contacts
-            </Link>
-            <Link href="/interactions" className="text-sm text-muted-foreground hover:text-foreground">
-              Interactions
-            </Link>
-            <Link href="/review" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-              Review
-              {reviewCount > 0 && (
-                <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                  {reviewCount}
-                </span>
-              )}
-            </Link>
-            <Link href="/tags" className="text-sm text-muted-foreground hover:text-foreground">
-              Tags
-            </Link>
-            <Link href="/settings" className="text-sm text-muted-foreground hover:text-foreground">
-              Settings
-            </Link>
+            </span>
+            <NavLinks reviewCount={reviewCount} />
           </nav>
           <form
             action={async () => {
