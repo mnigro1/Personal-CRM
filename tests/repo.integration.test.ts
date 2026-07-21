@@ -225,6 +225,22 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     await repoA.softDeleteContact(dupe.id);
   });
 
+  it("deleteTag unlinks contacts and tombstones the tag", async () => {
+    const c = await repoA.createContact({ firstName: "TagDelete" });
+    await repoA.setContactTags(c.id, ["junktag", "keeptag"]);
+    const junk = (await repoA.listTags()).find((t) => t.normalizedName === "junktag")!;
+
+    await repoA.deleteTag(junk.id);
+
+    const remaining = (await repoA.getContact(c.id))!.tags.map((t) => t.name);
+    expect(remaining).toEqual(["keeptag"]);
+    expect((await repoA.listTags()).some((t) => t.id === junk.id)).toBe(false);
+
+    // Cross-workspace delete is rejected.
+    const keep = (await repoA.listTags()).find((t) => t.normalizedName === "keeptag")!;
+    await expect(repoB.deleteTag(keep.id)).rejects.toThrow(/not found/i);
+  });
+
   it("lists tags with contact counts", async () => {
     const c = await repoA.createContact({ firstName: "TagCount" });
     await repoA.setContactTags(c.id, ["countme", "countme2"]);

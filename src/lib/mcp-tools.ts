@@ -43,7 +43,7 @@ CAPTURING (when the user describes a conversation or pastes notes):
 4. Report concisely what you proposed, flag probable duplicates and blocking items (ambiguous names, new contacts), and mention the review link.
 5. apply_extraction ONLY after the user explicitly approves in chat ("looks good" = everything non-blocked; a subset = exactly that subset). Never apply unprompted.
 
-TAG HYGIENE: tags are broad categories (10-30 total), not per-fact labels — facts belong in memories. Before tagging, check list_tags and reuse aggressively ("alumni" covers "AlumniChat"). Never tag transient states ("owed an update", "missing email") — those are follow-ups or just gaps. If the user asks to clean up tags (or you notice obvious near-duplicates), propose a consolidation plan from list_tags counts and, after they approve it in chat, execute with merge_tags.
+TAG HYGIENE: tags are broad categories (10-30 total), not per-fact labels — facts belong in memories. Before tagging, check list_tags and reuse aggressively ("alumni" covers "AlumniChat"). Never tag transient states ("owed an update", "missing email") — those are follow-ups or just gaps. If the user asks to clean up tags (or you notice obvious near-duplicates), propose a consolidation plan from list_tags counts and, after they approve it in chat, execute it yourself: merge_tags for near-duplicates, delete_tag for junk that shouldn't exist, set_contact_tags to retag individual contacts. Never say tags can't be edited — these tools are the mechanism.
 
 DUPLICATE CONTACTS: before creating anyone, search_contacts for their name — create_contact also hard-blocks likely duplicates and returns candidates; ask the user "same person?" and reuse the existing record unless they confirm it's someone new (then retry with force: true). find_duplicate_contacts scans for existing duplicate pairs on request.
 
@@ -397,6 +397,39 @@ export function registerCrmTools(
     async ({ sourceTagId, targetTagId }) => {
       await repo.mergeTags(sourceTagId, targetTagId);
       return json({ merged: true, sourceTagId, targetTagId });
+    },
+  );
+
+  server.registerTool(
+    "set_contact_tags",
+    {
+      annotations: { title: "Set contact tags", ...safeWrite, idempotentHint: true },
+      description:
+        "Replace one contact's full tag set (names, not ids — existing tags are reused via normalization, new ones created). The way to retag contacts during a user-approved tag cleanup. Pass the complete final list; omitted tags are removed from this contact.",
+      inputSchema: {
+        contactId: z.string().uuid(),
+        tags: z.array(z.string()).describe("The contact's complete new tag list"),
+      },
+    },
+    async ({ contactId, tags: tagNames }) => {
+      const contact = await repo.getContact(contactId);
+      if (!contact) return json({ error: "Contact not found" });
+      await repo.setContactTags(contactId, tagNames);
+      const updated = await repo.getContact(contactId);
+      return json({ updated: true, tags: updated?.tags.map((t) => t.name) ?? [] });
+    },
+  );
+
+  server.registerTool(
+    "delete_tag",
+    {
+      description:
+        "Retire a tag entirely: removes it from every contact and tombstones it (no merge target). For junk tags like 'missing email' that shouldn't exist at all. Get the user's OK on the cleanup plan before calling.",
+      inputSchema: { tagId: z.string().uuid() },
+    },
+    async ({ tagId }) => {
+      await repo.deleteTag(tagId);
+      return json({ deleted: true, tagId });
     },
   );
 
