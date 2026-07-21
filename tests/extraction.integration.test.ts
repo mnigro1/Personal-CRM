@@ -334,6 +334,37 @@ describe.skipIf(!hasDb)("extraction pipeline (integration)", async () => {
     expect(all).toHaveLength(2);
   });
 
+  it("summary lifecycle: apply marks stale, refresh clears it, isolation holds", async () => {
+    const contact = await repo.createContact({ firstName: "Snapshot" });
+    await repo.addMemory({ contactId: contact.id, text: "Snapshot test fact", category: "other" });
+
+    // Missing summary + has memories → listed as needing a snapshot.
+    let stale = await repo.listStaleSummaries();
+    expect(stale.some((c) => c.id === contact.id)).toBe(true);
+
+    const updated = await repo.updateContactSummary(contact.id, "You met Snapshot recently.");
+    expect(updated!.aiSummary).toBe("You met Snapshot recently.");
+    expect(updated!.aiSummaryStale).toBe(false);
+    expect(updated!.aiSummaryGeneratedAt).not.toBeNull();
+    stale = await repo.listStaleSummaries();
+    expect(stale.some((c) => c.id === contact.id)).toBe(false);
+
+    // Applying an extraction re-flags it.
+    const interaction = await mkInteraction(`snapshot staleness ${run}`, [contact.id]);
+    const { extraction } = await repo.saveProposal(
+      interaction.id,
+      { new_memories: [{ contact: contact.id, text: "A newer snapshot fact", category: "other" }] },
+      { model: "test" },
+    );
+    await repo.applyExtraction(extraction.id, { new_memories: [0] }, userId);
+    stale = await repo.listStaleSummaries();
+    expect(stale.some((c) => c.id === contact.id)).toBe(true);
+
+    // Another workspace can't write this contact's summary.
+    const otherRepo = repoFor(otherWsId);
+    expect(await otherRepo.updateContactSummary(contact.id, "hijack")).toBeNull();
+  });
+
   it("marks extraction failed without touching the capture", async () => {
     const interaction = await mkInteraction(`failure test ${run}`);
     await repo.markExtractionFailed(interaction.id, "malformed JSON", { model: "test" });

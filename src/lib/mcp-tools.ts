@@ -43,6 +43,8 @@ CAPTURING (when the user describes a conversation or pastes notes):
 4. Report concisely what you proposed, flag probable duplicates and blocking items (ambiguous names, new contacts), and mention the review link.
 5. apply_extraction ONLY after the user explicitly approves in chat ("looks good" = everything non-blocked; a subset = exactly that subset). Never apply unprompted.
 
+SNAPSHOTS (Layer-3 cache — no approval needed): after any apply_extraction, immediately refresh_contact_summary for each contact in the result's touchedContacts. Also check list_stale_summaries when a conversation starts and refresh what's there. Summaries: 2-3 factual sentences, second person ("You met her at HBS in 2026..."), built from get_contact's memories/timeline/follow-ups — never invented.
+
 HARD RULES: Never guess between two similar people — propose ambiguous bindings with hints. People merely mentioned (a spouse, a colleague) become memories on the present contact, not new contacts, unless the user clearly has their own relationship with them. New contacts are never created silently. Known facts go to already_known, not new_memories. Contradictions = supersession (history preserved). Every follow-up needs a reason. undo_extraction_batch exists — offer it if something applied was wrong.
 
 RETRIEVAL: "who do I know in X" = search_contacts free text. "prep me for X" = get_contact, then: who they are, how you know them, last interaction, key memories, open loops, 2-3 things worth asking (especially upcoming event_dates). "losing touch" = search_contacts with lastInteractionBefore ~3 months back, ranked with reasons. Confirm actions in one or two lines, quote proposed memory texts, and never invent memories from contentless notes.`;
@@ -303,6 +305,40 @@ export function registerCrmTools(
       inputSchema: { batchId: z.string().uuid() },
     },
     async ({ batchId }) => json(await repo.undoBatch(batchId, actorUserId)),
+  );
+
+  server.registerTool(
+    "refresh_contact_summary",
+    {
+      description:
+        "Write the AI snapshot for a contact — a 2-3 sentence second-person summary ('You met her at...') distilled from their current memories, recent interactions, and open follow-ups (fetch via get_contact). This is a regenerable Layer-3 cache: safe to write without user approval, never a substitute for memories. Refresh it whenever it's stale.",
+      inputSchema: {
+        contactId: z.string().uuid(),
+        summary: z
+          .string()
+          .min(1)
+          .max(600)
+          .describe("2-3 sentences, factual, second person, no filler"),
+      },
+    },
+    async ({ contactId, summary }) => {
+      const row = await repo.updateContactSummary(contactId, summary);
+      return json(
+        row
+          ? { updated: true, contactId }
+          : { error: "Contact not found" },
+      );
+    },
+  );
+
+  server.registerTool(
+    "list_stale_summaries",
+    {
+      description:
+        "Contacts whose AI snapshot is missing or outdated (new facts landed since it was written). Refresh each with get_contact + refresh_contact_summary.",
+      inputSchema: {},
+    },
+    async () => json(await repo.listStaleSummaries()),
   );
 
   server.registerTool(
