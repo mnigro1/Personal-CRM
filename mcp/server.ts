@@ -22,7 +22,9 @@ async function main() {
   const { db } = await import("../src/db");
   const { users, workspaces } = await import("../src/db/schema");
   const { repoFor } = await import("../src/db/repo");
-  const { registerCrmTools } = await import("../src/lib/mcp-tools");
+  const { buildServerInstructions, registerCrmTools } = await import(
+    "../src/lib/mcp-tools"
+  );
 
   const email = process.env.MCP_USER_EMAIL;
   if (!email) throw new Error("MCP_USER_EMAIL is not set");
@@ -35,7 +37,10 @@ async function main() {
     .where(eq(workspaces.ownerUserId, user.id));
   if (!workspace) throw new Error(`No workspace for ${email}`);
 
-  const server = new McpServer({ name: "personal-crm", version: "0.1.0" });
+  const server = new McpServer(
+    { name: "personal-crm", version: "0.1.0" },
+    { instructions: buildServerInstructions({ timezone: user.timezone }) },
+  );
   registerCrmTools(server, repoFor(workspace.id), user.id);
 
   const transport = new StdioServerTransport();

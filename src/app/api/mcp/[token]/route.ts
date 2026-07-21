@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { repoFor } from "@/db/repo";
 import { resolveMcpToken } from "@/db/tokens";
-import { registerCrmTools } from "@/lib/mcp-tools";
+import { buildServerInstructions, registerCrmTools } from "@/lib/mcp-tools";
 
 /**
  * Hosted MCP endpoint (Streamable HTTP) for remote AI clients — claude.ai
@@ -31,7 +31,10 @@ async function handle(req: Request, token: string): Promise<Response> {
     );
   }
 
-  const server = new McpServer({ name: "personal-crm", version: "0.1.0" });
+  const server = new McpServer(
+    { name: "personal-crm", version: "0.1.0" },
+    { instructions: buildServerInstructions({ timezone: auth.timezone }) },
+  );
   registerCrmTools(server, repoFor(auth.workspaceId), auth.userId);
 
   const transport = new WebStandardStreamableHTTPServerTransport({

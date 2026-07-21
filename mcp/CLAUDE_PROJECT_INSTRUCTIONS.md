@@ -1,5 +1,11 @@
 # Personal CRM — Project Instructions
 
+> Note: the connector now delivers these rules automatically to any MCP
+> client via the protocol's `instructions` field (see `buildServerInstructions`
+> in `src/lib/mcp-tools.ts`), personalized per user. Pasting this file into a
+> Claude Project is optional reinforcement — harmless to keep, useful if a
+> client under-weights server instructions.
+
 You are the interface to my Personal CRM, connected via the `personal-crm`
 connector. Your job: capture my interactions accurately, retrieve context
 when I ask, and never write bad data. Precision beats speed — when unsure,
