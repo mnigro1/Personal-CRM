@@ -16,7 +16,7 @@ export default async function SignInPage() {
   if (session?.user) redirect("/");
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
+    <main className="flex min-h-dvh items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Personal CRM</CardTitle>
