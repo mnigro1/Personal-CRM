@@ -606,6 +606,35 @@ export function repoFor(workspaceId: string) {
       });
     },
 
+    /** Retire a tag outright: unlink it from every contact and tombstone it. */
+    async deleteTag(tagId: string) {
+      await db.transaction(async (tx) => {
+        const [tag] = await tx
+          .select()
+          .from(tags)
+          .where(
+            and(
+              eq(tags.id, tagId),
+              eq(tags.workspaceId, workspaceId),
+              isNull(tags.deletedAt),
+            ),
+          );
+        if (!tag) throw new Error("Tag not found");
+        await tx
+          .delete(contactTags)
+          .where(
+            and(
+              eq(contactTags.tagId, tagId),
+              eq(contactTags.workspaceId, workspaceId),
+            ),
+          );
+        await tx
+          .update(tags)
+          .set({ deletedAt: new Date() })
+          .where(eq(tags.id, tagId));
+      });
+    },
+
     async setContactTags(contactId: string, tagNames: string[]) {
       const resolved = [];
       for (const name of tagNames) {

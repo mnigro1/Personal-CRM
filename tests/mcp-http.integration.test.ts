@@ -97,6 +97,10 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     const names = tools.map((t) => t.name);
     expect(names).toContain("search_contacts");
     expect(names).toContain("submit_extraction_proposal");
+    // Tag management surface — the "tags are write-once" complaint fix.
+    for (const t of ["list_tags", "merge_tags", "set_contact_tags", "delete_tag"]) {
+      expect(names).toContain(t);
+    }
 
     // Safety hints so clients auto-run low-risk tools instead of prompting.
     const get = tools.find((t) => t.name === "get_contact");
