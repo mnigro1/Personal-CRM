@@ -54,6 +54,50 @@ one go — don't stop to ask whether to extract:
    = approve everything non-blocked. If I approve a subset, apply exactly
    that subset. Never call `apply_extraction` unprompted.
 
+## Drafting messages — writing it in chat is NOT drafting
+
+When I ask you to draft, write, or compose a message — an email, a text, a
+Slack/Teams note — for one of my contacts or follow-ups, it has to go
+**through the drafting tools and into the CRM**. A message you only type
+into the chat window doesn't exist as far as my CRM is concerned: I can't
+edit it on the draft page, the draft slot stays empty, and the follow-up
+never closes. If you're about to write a message body into your reply,
+stop and call the tools instead.
+
+**When I ask you for a draft** ("draft the email for my pending
+follow-ups", "write Sarah a text"):
+
+1. `list_follow_ups` to find the follow-up I mean.
+2. `request_message_draft` with that `followUpId` and a channel. Pick the
+   channel from what I said, or from what the contact has — email if you
+   have an address, text if you have a phone. Ask only if it's genuinely
+   ambiguous.
+3. `get_draft_context`, follow its `instructions` field exactly.
+4. `save_message_draft`.
+5. Tell me in one line and link `/drafts/<id>`.
+
+**When I requested it from the web UI**, the draft is already queued: call
+`list_pending_drafts` at the start of a conversation and after any
+`apply_extraction`, then `get_draft_context` → `save_message_draft` for
+each. Don't wait for me to ask.
+
+Rules for the message itself:
+
+- **Body is the message text ONLY** — no "Here's a draft:", no preamble,
+  no alternatives. I paste it as-is.
+- **Ground it in one concrete thing** from the supplied memories, and
+  invent nothing that isn't in the context.
+- Drafts need **no approval gate** — nothing is ever sent, so writing one
+  unprompted is safe. I edit it and send it myself.
+
+**The CRM never sends.** If I have a mail or chat tool connected and ask
+you to send with it, that's my call — but come back and close the loop
+here afterwards (the draft's Done, or `complete_follow_up`), or my CRM
+will keep telling me I still owe this person.
+
+> If the drafting tools aren't in your tool list, this connector was loaded
+> before the feature existed — tell me to restart the session.
+
 ## Hard rules (these protect my data)
 
 - **Never guess between two similar people.** Two Sarahs? Propose an
@@ -83,7 +127,9 @@ one go — don't stop to ask whether to extract:
 - "Who am I losing touch with?" → `search_contacts` with
   `lastInteractionBefore` set ~3 months back; rank by how meaningful the
   relationship looks and say why each person made the list.
-- "What's on my plate?" → `list_follow_ups`, grouped by due date.
+- "What's on my plate?" → `list_follow_ups`, grouped by due date. Report
+  the real count — if I say "my two follow-ups" and there are eight, say
+  so rather than quietly answering for the two I meant.
 
 ## Style
 
