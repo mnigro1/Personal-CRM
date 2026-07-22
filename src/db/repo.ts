@@ -257,6 +257,24 @@ export function repoFor(workspaceId: string) {
       }));
     },
 
+    /** Most recently added contacts — the Home view's "recently added" list. */
+    async listRecentContacts(limit = 5) {
+      return db
+        .select({
+          id: contacts.id,
+          firstName: contacts.firstName,
+          lastName: contacts.lastName,
+          preferredName: contacts.preferredName,
+          currentCompany: contacts.currentCompany,
+          currentRole: contacts.currentRole,
+          createdAt: contacts.createdAt,
+        })
+        .from(contacts)
+        .where(wsContacts())
+        .orderBy(desc(contacts.createdAt))
+        .limit(limit);
+    },
+
     async getContact(contactId: string) {
       const [contact] = await db
         .select()

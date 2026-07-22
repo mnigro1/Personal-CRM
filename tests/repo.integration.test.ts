@@ -241,6 +241,26 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     await expect(repoB.deleteTag(keep.id)).rejects.toThrow(/not found/i);
   });
 
+  it("lists recent contacts newest-first, excluding deleted", async () => {
+    const older = await repoA.createContact({ firstName: "RecentOlder" });
+    const newer = await repoA.createContact({ firstName: "RecentNewer" });
+
+    const recent = await repoA.listRecentContacts(20);
+    const idx = (id: string) => recent.findIndex((c) => c.id === id);
+    expect(idx(newer.id)).toBeGreaterThanOrEqual(0);
+    expect(idx(newer.id)).toBeLessThan(idx(older.id));
+
+    await repoA.softDeleteContact(newer.id);
+    expect(
+      (await repoA.listRecentContacts(20)).some((c) => c.id === newer.id),
+    ).toBe(false);
+
+    // Workspace-scoped.
+    expect(
+      (await repoB.listRecentContacts(20)).some((c) => c.id === older.id),
+    ).toBe(false);
+  });
+
   it("lists tags with contact counts", async () => {
     const c = await repoA.createContact({ firstName: "TagCount" });
     await repoA.setContactTags(c.id, ["countme", "countme2"]);

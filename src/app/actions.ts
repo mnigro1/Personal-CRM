@@ -75,7 +75,7 @@ export async function deleteContactAction(contactId: string) {
   const { workspace } = await requireSession();
   await repoFor(workspace.id).softDeleteContact(contactId);
   revalidatePath("/");
-  redirect("/");
+  redirect("/contacts");
 }
 
 // --------------------------------------------------------------- interactions
@@ -177,6 +177,13 @@ export async function completeFollowUpAction(
   const { workspace } = await requireSession();
   await repoFor(workspace.id).completeFollowUp(followUpId);
   revalidatePath(`/contacts/${contactId}`);
+}
+
+/** Completing from the Home inbox: stay on Home instead of a contact page. */
+export async function completeFollowUpFromHomeAction(followUpId: string) {
+  const { workspace } = await requireSession();
+  await repoFor(workspace.id).completeFollowUp(followUpId);
+  revalidatePath("/");
 }
 
 // ----------------------------------------------------------------------- tags
