@@ -2,6 +2,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { interactionType, memoryCategory, sourceType } from "@/db/schema";
 import type { Repo } from "@/db/repo";
+import {
+  buildDraftInstructions,
+  CHANNEL_SPECS,
+  renderDraftContext,
+} from "@/lib/drafting";
 
 /**
  * The extraction contract, inlined for remote AI clients (claude.ai,
@@ -45,6 +50,8 @@ CAPTURING (when the user describes a conversation or pastes notes):
 DUPLICATE CONTACTS: before creating anyone, search_contacts for their name — create_contact also hard-blocks likely duplicates and returns candidates; ask the user "same person?" and reuse the existing record unless they confirm it's someone new (then retry with force: true). find_duplicate_contacts scans for existing duplicate pairs on request.
 
 SNAPSHOTS (Layer-3 cache — no approval needed): after any apply_extraction, immediately refresh_contact_summary for each contact in the result's touchedContacts. Also check list_stale_summaries when a conversation starts and refresh what's there. Summaries: 2-3 factual sentences, second person ("You met her at HBS in 2026..."), built from get_contact's memories/timeline/follow-ups — never invented.
+
+DRAFTING: call list_pending_drafts at the start of any conversation and after any apply_extraction. For each pending draft: get_draft_context → follow its instructions field exactly → save_message_draft. Drafts are safe to write unprompted and need no approval gate — nothing is ever sent, the message is inert until the user sends it themselves, and they edit before it goes anywhere. Body must be the message text ONLY, no preamble. Ground every draft in one concrete supplied memory and invent nothing. Report in one line what you drafted and link /drafts/<id>. Never offer to send a message — you cannot, and the user does not want you to.
 
 HARD RULES: Never guess between two similar people — propose ambiguous bindings with hints. People merely mentioned (a spouse, a colleague) become memories on the present contact, not new contacts, unless the user clearly has their own relationship with them. New contacts are never created silently. Known facts go to already_known, not new_memories. Contradictions = supersession (history preserved). Every follow-up needs a reason. undo_extraction_batch exists — offer it if something applied was wrong.
 
@@ -480,6 +487,135 @@ export function registerCrmTools(
     async ({ followUpId }) => {
       const followUp = await repo.completeFollowUp(followUpId);
       return json(followUp ? { completed: true } : { error: "Not found" });
+    },
+  );
+
+  // ------------------------------------------------------------------ drafting
+  //
+  // The app has no server-side model. Drafting works the same way extraction
+  // does: the app stages a request and assembles context, the connected client
+  // writes the text back. Nothing here sends anything — the user always sends
+  // the message themselves.
+
+  server.registerTool(
+    "list_pending_drafts",
+    {
+      annotations: { title: "List pending drafts", ...readOnly },
+      description:
+        "Message drafts the user has requested but that haven't been written yet. Check this at the start of a conversation and after any apply_extraction.",
+      inputSchema: {},
+    },
+    async () => {
+      const rows = await repo.listPendingDrafts();
+      return json(
+        rows.map((r) => ({
+          draftId: r.draft.id,
+          contact: `${r.contact.preferredName ?? r.contact.firstName} ${r.contact.lastName ?? ""}`.trim(),
+          channel: r.draft.channel,
+          channelLabel: r.draft.channelLabel,
+          followUp: r.followUp?.description ?? null,
+          instruction: r.draft.instruction,
+          requestedAt: r.draft.requestedAt,
+          next: "Call get_draft_context with this draftId, follow its instructions exactly, then save_message_draft.",
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_draft_context",
+    {
+      annotations: { title: "Get draft context", ...readOnly },
+      description:
+        "Everything needed to write one message draft: who they are, the ask, what's known about them, the last interaction, and the user's voice. Follow the returned `instructions` field exactly.",
+      inputSchema: { draftId: z.string().uuid() },
+    },
+    async ({ draftId }) => {
+      const ctx = await repo.buildDraftContext(draftId);
+      if (!ctx) return json({ error: "Draft not found" });
+      return json({
+        instructions: buildDraftInstructions(ctx),
+        context: renderDraftContext(ctx),
+        channel: ctx.channel,
+        needsSubject: CHANNEL_SPECS[ctx.channel].hasSubject,
+        maxChars: CHANNEL_SPECS[ctx.channel].maxChars,
+        memoryIds: ctx.memories.map((m) => m.id),
+      });
+    },
+  );
+
+  server.registerTool(
+    "save_message_draft",
+    {
+      annotations: { title: "Save message draft", ...safeWrite },
+      description:
+        "Write the drafted message back. Body must be the message text ONLY — no preamble, no alternatives, no commentary; it is pasted as-is. This does not send anything.",
+      inputSchema: {
+        draftId: z.string().uuid(),
+        body: z.string(),
+        subject: z
+          .string()
+          .optional()
+          .describe("Email only — required when the channel is email"),
+      },
+    },
+    async ({ draftId, body, subject }) => {
+      const ctx = await repo.buildDraftContext(draftId);
+      if (ctx?.channel === "email" && !subject?.trim()) {
+        return json({
+          error:
+            "This is an email draft — call save_message_draft again with a subject line as well as the body.",
+        });
+      }
+      const row = await repo.saveDraftBody(draftId, {
+        body,
+        subject: subject ?? null,
+        model: "mcp-client",
+        contextJson: ctx ? { memoryIds: ctx.memories.map((m) => m.id) } : null,
+      });
+      if (!row) {
+        return json({
+          error:
+            "No draft is waiting on that id — it may have already been written, edited, or sent. Do not retry.",
+        });
+      }
+      return json({
+        saved: true,
+        draftId,
+        note: "The user reviews and edits it, then sends it themselves.",
+      });
+    },
+  );
+
+  server.registerTool(
+    "request_message_draft",
+    {
+      annotations: { title: "Request a message draft", ...safeWrite },
+      description:
+        "Queue a new draft for a follow-up (the contact comes from the follow-up), then immediately write it with get_draft_context + save_message_draft. If a draft is already in flight for this follow-up, that one is returned instead of creating a second.",
+      inputSchema: {
+        followUpId: z.string().uuid(),
+        channel: z.enum(["text", "slack", "teams", "email", "other"]),
+        channelLabel: z
+          .string()
+          .optional()
+          .describe('Required when channel is "other" — e.g. "LinkedIn DM"'),
+        instruction: z.string().optional(),
+      },
+    },
+    async (args) => {
+      const draft = await repo.createDraft({
+        followUpId: args.followUpId,
+        channel: args.channel,
+        channelLabel: args.channelLabel ?? null,
+        instruction: args.instruction ?? null,
+        createdBy: "ai",
+      });
+      return json({
+        created: true,
+        draftId: draft.id,
+        next: "Now call get_draft_context with this draftId.",
+      });
     },
   );
 }

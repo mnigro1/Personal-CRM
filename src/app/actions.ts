@@ -6,6 +6,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { repoFor, type NewContact, type NewInteraction } from "@/db/repo";
+import type { SentOutcome } from "@/db/repo-drafts";
+import { CHANNELS, type Channel } from "@/lib/drafting";
 import { requireSession } from "@/lib/session";
 
 function str(formData: FormData, key: string): string | null {
@@ -159,20 +161,69 @@ export async function addFollowUpAction(contactId: string, formData: FormData) {
   revalidatePath(`/contacts/${contactId}`);
 }
 
-export async function completeFollowUpAction(
-  contactId: string,
-  followUpId: string,
+/**
+ * THE completion path — every Done in the app lands here (spec §1). One
+ * required question: what actually happened? Only "as_written" on a written
+ * draft, or text the user pasted themselves, ever reaches
+ * interactions.raw_source (immutable Layer 1). Everything else completes the
+ * follow-up and logs nothing.
+ */
+export async function resolveFollowUpAction(
+  opts: {
+    draftId: string | null;
+    followUpId: string | null;
+    contactId: string;
+    returnTo: string;
+  },
+  formData: FormData,
 ) {
   const { workspace } = await requireSession();
-  await repoFor(workspace.id).completeFollowUp(followUpId);
-  revalidatePath(`/contacts/${contactId}`);
-}
+  const repo = repoFor(workspace.id);
 
-/** Completing from the Home inbox: stay on Home instead of a contact page. */
-export async function completeFollowUpFromHomeAction(followUpId: string) {
-  const { workspace } = await requireSession();
-  await repoFor(workspace.id).completeFollowUp(followUpId);
+  const kind = str(formData, "outcome");
+  if (kind !== "as_written" && kind !== "different" && kind !== "other_channel") {
+    throw new Error("Tell us what happened");
+  }
+
+  if (opts.draftId) {
+    // markDraftSent owns the whole close: the Layer 1 decision, the draft's
+    // final status, and completing its follow-up.
+    const outcome: SentOutcome =
+      kind === "different"
+        ? { kind, text: str(formData, "sentText") }
+        : { kind };
+    const result = await repo.markDraftSent(opts.draftId, outcome);
+    if (!result) throw new Error("Draft not found");
+  } else {
+    if (!opts.followUpId) throw new Error("Nothing to complete");
+    // No draft ever existed, so "as written" has nothing to describe.
+    if (kind === "as_written") {
+      throw new Error("No draft exists to have been sent as written");
+    }
+    const text = kind === "different" ? str(formData, "sentText") : null;
+    if (text) {
+      // Channel unknown here — the user sent it on their own. "other" is
+      // honest; outbound text skips the extraction queue like all sends.
+      await repo.createInteraction({
+        type: "other",
+        occurredAt: new Date(),
+        rawSource: text,
+        sourceType: "manual_note",
+        extractionStatus: "skipped",
+        contactIds: [opts.contactId],
+      });
+    }
+    await repo.completeFollowUp(opts.followUpId);
+  }
+
   revalidatePath("/");
+  revalidatePath(`/contacts/${opts.contactId}`);
+  // Stay where the user was. Relative paths only — never off-site.
+  redirect(
+    opts.returnTo.startsWith("/") && !opts.returnTo.startsWith("//")
+      ? opts.returnTo
+      : `/contacts/${opts.contactId}`,
+  );
 }
 
 // ----------------------------------------------------------------- extraction
@@ -307,3 +358,66 @@ export async function updateTimezoneAction(formData: FormData) {
   await db.update(users).set({ timezone }).where(eq(users.id, user.id));
   revalidatePath("/settings");
 }
+
+// ------------------------------------------------------------------- drafting
+
+export async function createDraftAction(
+  contactId: string,
+  followUpId: string | null,
+  formData: FormData,
+) {
+  const { workspace } = await requireSession();
+  const channel = str(formData, "channel");
+  if (!channel || !CHANNELS.includes(channel as Channel)) {
+    throw new Error("Pick a channel");
+  }
+  const draft = await repoFor(workspace.id).createDraft({
+    contactId,
+    followUpId,
+    channel: channel as Channel,
+    channelLabel: str(formData, "channelLabel"),
+    createdBy: "user",
+  });
+  revalidatePath("/");
+  revalidatePath(`/contacts/${contactId}`);
+  redirect(`/drafts/${draft.id}`);
+}
+
+/**
+ * Autosave from the editor. Deliberately does not revalidate or redirect —
+ * it fires on debounce/blur while typing, and it must never advance status.
+ * Returns false when the write matched nothing (draft no longer editable),
+ * so the editor can warn instead of lying "Saved".
+ */
+export async function saveDraftTextAction(
+  draftId: string,
+  body: string,
+  subject: string | null,
+): Promise<boolean> {
+  const { workspace } = await requireSession();
+  const row = await repoFor(workspace.id).updateDraftText(draftId, {
+    body,
+    subject,
+  });
+  return row !== null;
+}
+
+export async function regenerateDraftAction(
+  draftId: string,
+  formData: FormData,
+) {
+  const { workspace } = await requireSession();
+  await repoFor(workspace.id).regenerateDraft(draftId, str(formData, "instruction"));
+  revalidatePath(`/drafts/${draftId}`);
+}
+
+export async function discardDraftAction(draftId: string) {
+  const { workspace } = await requireSession();
+  const repo = repoFor(workspace.id);
+  const row = await repo.getDraft(draftId);
+  await repo.discardDraft(draftId);
+  revalidatePath("/");
+  if (row) redirect(`/contacts/${row.contact.id}`);
+  redirect("/");
+}
+

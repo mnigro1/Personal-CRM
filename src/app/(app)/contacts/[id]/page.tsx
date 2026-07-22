@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import {
   addFollowUpAction,
   addMemoryAction,
-  completeFollowUpAction,
   deleteContactAction,
   deleteMemoryAction,
 } from "@/app/actions";
+import { DoneDialog } from "@/components/done-dialog";
+import { DraftMessageButton } from "@/components/draft-message-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -33,8 +34,13 @@ export default async function ContactPage({
   const { history } = await searchParams;
   const showHistory = history === "1";
   const { workspace } = await requireSession();
-  const contact = await repoFor(workspace.id).getContact(id);
+  const repo = repoFor(workspace.id);
+  const contact = await repo.getContact(id);
   if (!contact) notFound();
+
+  const activeDrafts = await repo.activeDraftsByFollowUp(
+    contact.followUps.filter((f) => f.status === "open").map((f) => f.id),
+  );
 
   const currentMemories = contact.memories.filter((m) => m.status === "current");
   const historicalMemories = contact.memories.filter(
@@ -234,9 +240,23 @@ export default async function ContactPage({
                     {f.dueDate ? ` · due ${f.dueDate}` : ""} · {f.priority}
                   </p>
                 </div>
-                <form action={completeFollowUpAction.bind(null, contact.id, f.id)}>
-                  <Button variant="outline" size="sm" type="submit">Done</Button>
-                </form>
+                <div className="flex shrink-0 gap-2">
+                  <DraftMessageButton
+                    contactId={contact.id}
+                    followUpId={f.id}
+                    contactName={contact.preferredName ?? contact.firstName}
+                    hasPhone={!!contact.phone}
+                    hasEmail={contact.emails.length > 0}
+                    existingDraftId={activeDrafts.get(f.id)?.id}
+                  />
+                  <DoneDialog
+                    followUpId={f.id}
+                    contactId={contact.id}
+                    draftId={activeDrafts.get(f.id)?.id ?? null}
+                    hasBody={!!activeDrafts.get(f.id)?.body}
+                    returnTo={`/contacts/${contact.id}`}
+                  />
+                </div>
               </div>
             ))}
             <form action={addFollowUpAction.bind(null, contact.id)} className="space-y-2 border-t pt-3">
