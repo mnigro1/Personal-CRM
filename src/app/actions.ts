@@ -45,10 +45,6 @@ export async function createContactAction(formData: FormData) {
   const { workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const contact = await repo.createContact(contactFromForm(formData));
-  const tagsCsv = str(formData, "tags");
-  if (tagsCsv) {
-    await repo.setContactTags(contact.id, tagsCsv.split(","));
-  }
   revalidatePath("/");
   redirect(`/contacts/${contact.id}`);
 }
@@ -60,13 +56,6 @@ export async function updateContactAction(
   const { workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   await repo.updateContact(contactId, contactFromForm(formData));
-  const tagsCsv = formData.get("tags");
-  if (typeof tagsCsv === "string") {
-    await repo.setContactTags(
-      contactId,
-      tagsCsv.split(",").filter((t) => t.trim()),
-    );
-  }
   revalidatePath(`/contacts/${contactId}`);
   redirect(`/contacts/${contactId}`);
 }
@@ -184,26 +173,6 @@ export async function completeFollowUpFromHomeAction(followUpId: string) {
   const { workspace } = await requireSession();
   await repoFor(workspace.id).completeFollowUp(followUpId);
   revalidatePath("/");
-}
-
-// ----------------------------------------------------------------------- tags
-
-export async function createTagAction(formData: FormData) {
-  const { workspace } = await requireSession();
-  const name = str(formData, "name");
-  if (!name) throw new Error("Tag name is required");
-  await repoFor(workspace.id).findOrCreateTag(name);
-  revalidatePath("/tags");
-}
-
-export async function mergeTagsAction(formData: FormData) {
-  const { workspace } = await requireSession();
-  const sourceTagId = str(formData, "sourceTagId");
-  const targetTagId = str(formData, "targetTagId");
-  if (!sourceTagId || !targetTagId)
-    throw new Error("Both source and target tags are required");
-  await repoFor(workspace.id).mergeTags(sourceTagId, targetTagId);
-  revalidatePath("/tags");
 }
 
 // ----------------------------------------------------------------- extraction

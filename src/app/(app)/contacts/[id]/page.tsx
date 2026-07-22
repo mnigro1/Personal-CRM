@@ -60,11 +60,6 @@ export default async function ContactPage({
             {[contact.currentRole, contact.currentCompany].filter(Boolean).join(" @ ")}
             {contact.location ? ` · ${contact.location}` : ""}
           </p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {contact.tags.map((t) => (
-              <Badge key={t.id} variant="secondary">{t.name}</Badge>
-            ))}
-          </div>
         </div>
         <div className="flex gap-2">
           {contact.linkedinUrl && (
