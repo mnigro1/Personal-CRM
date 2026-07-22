@@ -84,18 +84,6 @@ export const proposalSchema = z.object({
       }),
     )
     .default([]),
-  tags: z
-    .array(
-      z.object({
-        contact: contactRef,
-        name: z.string().min(1),
-        is_new: z
-          .boolean()
-          .default(false)
-          .describe("True when no existing workspace tag matches"),
-      }),
-    )
-    .default([]),
   follow_ups: z
     .array(
       z.object({
@@ -163,7 +151,6 @@ export const selectionsSchema = z.object({
   new_memories: z.array(z.number().int().min(0)).default([]),
   supersessions: z.array(z.number().int().min(0)).default([]),
   already_known: z.array(z.number().int().min(0)).default([]),
-  tags: z.array(z.number().int().min(0)).default([]),
   follow_ups: z.array(z.number().int().min(0)).default([]),
   contact_field_updates: z.array(z.number().int().min(0)).default([]),
   edits: z
@@ -207,7 +194,6 @@ export function selectAllDefaults(staged: StagedProposal): Selections {
     new_memories: p.new_memories.map((_, i) => i).filter((i) => !dupIdx.has(i)),
     supersessions: p.supersessions.map((_, i) => i),
     already_known: p.already_known.map((_, i) => i),
-    tags: p.tags.map((_, i) => i),
     follow_ups: p.follow_ups.map((_, i) => i),
     contact_field_updates: p.contact_field_updates.map((_, i) => i),
   });

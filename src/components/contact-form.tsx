@@ -4,9 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { contacts } from "@/db/schema";
 
-type Contact = typeof contacts.$inferSelect & {
-  tags?: { id: string; name: string }[];
-};
+type Contact = typeof contacts.$inferSelect;
 
 export function ContactForm({
   action,
@@ -48,7 +46,6 @@ export function ContactForm({
         {field("dateFirstMet", "Date first met", contact?.dateFirstMet, "date")}
         {field("relationshipCategory", "Relationship category", contact?.relationshipCategory)}
       </div>
-      {field("tags", "Tags (comma-separated)", contact?.tags?.map((t) => t.name).join(", "))}
       <div className="space-y-1">
         <Label htmlFor="howWeMet">How we met</Label>
         <Textarea id="howWeMet" name="howWeMet" defaultValue={contact?.howWeMet ?? ""} />

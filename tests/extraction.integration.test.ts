@@ -169,7 +169,6 @@ describe.skipIf(!hasDb)("extraction pipeline (integration)", async () => {
           { existing_memory_id: existing.id, reason: "She left Bain", replacement_memory_index: 0 },
         ],
         already_known: [{ existing_memory_id: known.id }],
-        tags: [{ contact: sarah.id, name: "Healthcare", is_new: true }],
         follow_ups: [
           { contact: sarah.id, description: "Check in after Denver move", reason: "She lands in September", due_date: "2026-10-01" },
         ],
@@ -186,7 +185,6 @@ describe.skipIf(!hasDb)("extraction pipeline (integration)", async () => {
         new_memories: [0, 1],
         supersessions: [0],
         already_known: [0],
-        tags: [0],
         follow_ups: [0],
         contact_field_updates: [0],
       },
@@ -196,7 +194,6 @@ describe.skipIf(!hasDb)("extraction pipeline (integration)", async () => {
     expect(result.counts.memoriesAdded).toBe(2);
     expect(result.counts.memoriesSuperseded).toBe(1);
     expect(result.counts.memoriesConfirmed).toBe(1);
-    expect(result.counts.tagsApplied).toBe(1);
     expect(result.counts.followUpsAdded).toBe(1);
     expect(result.counts.fieldsUpdated).toBe(1);
 

@@ -3,13 +3,13 @@
 You (Claude) are the extraction engine for this CRM. When the user captures an
 interaction (web UI or `log_interaction`), it waits with `extraction_status =
 pending`. Your job: turn the raw text into a **proposal** the user reviews.
-You never write memories/tags/follow-ups directly during extraction — always
+You never write memories or follow-ups directly during extraction — always
 stage a proposal via `submit_extraction_proposal`.
 
 ## Workflow
 
 1. `list_pending_captures` → pick an interaction
-2. `get_extraction_context(interactionId)` → raw source + roster + current memories + tags + timezone
+2. `get_extraction_context(interactionId)` → raw source + roster + current memories + timezone
 3. Build the proposal JSON (below) and `submit_extraction_proposal`
 4. Tell the user what you proposed, flag anything blocking (ambiguous names,
    new contacts, probable duplicates). They approve on the web review screen
@@ -46,7 +46,6 @@ stage a proposal via `submit_extraction_proposal`.
   "already_known": [            // fact restated that's already in currentMemories
     { "existing_memory_id": "<uuid>", "restated": "still exploring healthcare" }
   ],
-  "tags": [ { "contact": "<uuid>", "name": "Healthcare", "is_new": false } ],
   "follow_ups": [               // reason is REQUIRED — always explain why
     { "contact": "<uuid>", "description": "Check in after the move",
       "reason": "He lands in Denver in September and suggested reconnecting",
@@ -63,7 +62,6 @@ stage a proposal via `submit_extraction_proposal`.
 
 - **Never guess between two plausible people.** A wrong bind writes bad
   memories to the wrong person — the failure that destroys trust. When unsure,
-  return `status: "ambiguous"` with candidates and hints (company, tags, last
   interaction). Nickname matches (Mike/Michael) are suggestions, not proofs.
 - **Mentioned-but-not-present people** (a spouse, a colleague) become memories
   on the primary contact ("Wife Emily is finishing residency"), **not** new
@@ -78,8 +76,6 @@ stage a proposal via `submit_extraction_proposal`.
 - **Dates**: resolve every relative date ("next spring", "after winter break",
   "in September") to an absolute `event_date` using the interaction date and
   `userTimezone` from the context, with honest `event_date_precision`.
-- **Tags**: reuse `existingTags` (match loosely — "healthcare" ≈ "Healthcare");
-  only set `is_new: true` when nothing fits. Tag sprawl is a when, not an if.
 - **Memories are single facts**, concise, third-person, durable ("Interested in
   healthcare entrepreneurship"), not conversation summaries or transient chatter.
 - **Nothing you write here touches Layer 1** — raw_source is immutable, and the

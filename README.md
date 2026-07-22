@@ -4,7 +4,11 @@ Personal CRM for professional connections — AI Native. Built from `personal-cr
 
 ## Status
 
-Phases 0–1 complete: schema for all spec tables, magic-link auth with invites, workspace-isolated repository layer, contacts/interactions/tags/memories/follow-ups UI, MCP server. AI extraction pipeline (Phase 2) is next — designed to run through Claude via MCP rather than an in-app API key.
+Phases 0–3 (partial) shipped: full schema, magic-link auth with invites,
+workspace-isolated repository layer, contacts/interactions/memories/follow-ups,
+the AI capture pipeline (extract → review → apply → undo), AI snapshots, the
+Home view, and a hosted MCP endpoint. Tags were removed deliberately — facts
+live in memories, which free-text search already covers.
 
 ## Setup
 
@@ -32,7 +36,9 @@ The usage contract (date handling, capture workflow, approval gates, retrieval p
 
 ## Tests
 
-`npm test` — unit tests always run; integration tests (workspace isolation, dedup, tag merge, last-interaction recompute) run when `DATABASE_URL` is set.
+`npm test` — unit tests always run; integration tests (workspace isolation,
+extraction apply/undo, duplicate detection, hosted MCP auth) run when
+`DATABASE_URL` is set.
 
 ## Architecture notes
 

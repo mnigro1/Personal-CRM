@@ -76,7 +76,6 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
 
   it("enforces workspace isolation: B sees none of A's data", async () => {
     const contact = await repoA.createContact({ firstName: "Sarah", lastName: "Johnson" });
-    await repoA.setContactTags(contact.id, ["HBS", "Healthcare"]);
     await repoA.addMemory({ contactId: contact.id, text: "Interested in healthcare entrepreneurship", category: "goals" });
     await repoA.addFollowUp({ contactId: contact.id, description: "Send intro", reason: "She asked" });
     await repoA.createInteraction({
@@ -88,7 +87,6 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     });
 
     expect(await repoB.listContacts()).toHaveLength(0);
-    expect(await repoB.listTags()).toHaveLength(0);
     expect(await repoB.listOpenFollowUps()).toHaveLength(0);
     expect(await repoB.listInteractions()).toHaveLength(0);
     expect(await repoB.getContact(contact.id)).toBeNull();
@@ -97,7 +95,6 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     const full = await repoA.getContact(contact.id);
     expect(full).not.toBeNull();
     expect(full!.memories).toHaveLength(1);
-    expect(full!.tags).toHaveLength(2);
     expect(full!.interactions).toHaveLength(1);
   });
 
@@ -169,30 +166,6 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     expect(c!.lastInteractionDate).toBeNull();
   });
 
-  it("merges tags: repoints contacts, tombstones source, resolves future uses", async () => {
-    const c1 = await repoA.createContact({ firstName: "TagOne" });
-    const c2 = await repoA.createContact({ firstName: "TagTwo" });
-    const vc = await repoA.findOrCreateTag("VC");
-    const venture = await repoA.findOrCreateTag("Venture Capital");
-    await repoA.setContactTags(c1.id, ["VC"]);
-    await repoA.setContactTags(c2.id, ["VC", "Venture Capital"]);
-
-    await repoA.mergeTags(vc.id, venture.id);
-
-    const full1 = await repoA.getContact(c1.id);
-    const full2 = await repoA.getContact(c2.id);
-    expect(full1!.tags.map((t) => t.name)).toEqual(["Venture Capital"]);
-    expect(full2!.tags.map((t) => t.name)).toEqual(["Venture Capital"]);
-
-    // Active tag list hides the tombstone.
-    const active = await repoA.listTags();
-    expect(active.some((t) => t.id === vc.id)).toBe(false);
-
-    // Re-using the merged-away name resolves to the target, not a new tag.
-    const resolved = await repoA.findOrCreateTag("vc");
-    expect(resolved.id).toBe(venture.id);
-  });
-
   it("finds similar contacts and duplicate pairs", async () => {
     const original = await repoA.createContact({
       firstName: "Jonathan",
@@ -225,22 +198,6 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     await repoA.softDeleteContact(dupe.id);
   });
 
-  it("deleteTag unlinks contacts and tombstones the tag", async () => {
-    const c = await repoA.createContact({ firstName: "TagDelete" });
-    await repoA.setContactTags(c.id, ["junktag", "keeptag"]);
-    const junk = (await repoA.listTags()).find((t) => t.normalizedName === "junktag")!;
-
-    await repoA.deleteTag(junk.id);
-
-    const remaining = (await repoA.getContact(c.id))!.tags.map((t) => t.name);
-    expect(remaining).toEqual(["keeptag"]);
-    expect((await repoA.listTags()).some((t) => t.id === junk.id)).toBe(false);
-
-    // Cross-workspace delete is rejected.
-    const keep = (await repoA.listTags()).find((t) => t.normalizedName === "keeptag")!;
-    await expect(repoB.deleteTag(keep.id)).rejects.toThrow(/not found/i);
-  });
-
   it("lists recent contacts newest-first, excluding deleted", async () => {
     const older = await repoA.createContact({ firstName: "RecentOlder" });
     const newer = await repoA.createContact({ firstName: "RecentNewer" });
@@ -261,14 +218,6 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     ).toBe(false);
   });
 
-  it("lists tags with contact counts", async () => {
-    const c = await repoA.createContact({ firstName: "TagCount" });
-    await repoA.setContactTags(c.id, ["countme", "countme2"]);
-    const withCounts = await repoA.listTagsWithCounts();
-    const countme = withCounts.find((t) => t.normalizedName === "countme");
-    expect(countme?.contactCount).toBe(1);
-  });
-
   it("soft-deleted contacts disappear from reads", async () => {
     const contact = await repoA.createContact({ firstName: "Ghost" });
     await repoA.softDeleteContact(contact.id);
@@ -277,22 +226,10 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     expect(list).toHaveLength(0);
   });
 
-  it("filters: tag AND/OR, company, open follow-ups", async () => {
+  it("filters: company, open follow-ups", async () => {
     const boston = await repoA.createContact({ firstName: "FilterBoston", currentCompany: "Acme", location: "Boston" });
     const denver = await repoA.createContact({ firstName: "FilterDenver", location: "Denver" });
-    await repoA.setContactTags(boston.id, ["investor", "boston"]);
-    await repoA.setContactTags(denver.id, ["investor"]);
     await repoA.addFollowUp({ contactId: denver.id, description: "ping", reason: "test" });
-
-    const tagList = await repoA.listTags();
-    const investorId = tagList.find((t) => t.normalizedName === "investor")!.id;
-    const bostonId = tagList.find((t) => t.normalizedName === "boston")!.id;
-
-    const orMatch = await repoA.listContacts({ tagIds: [investorId, bostonId], tagMode: "or" });
-    expect(orMatch.map((c) => c.firstName).sort()).toEqual(["FilterBoston", "FilterDenver"]);
-
-    const andMatch = await repoA.listContacts({ tagIds: [investorId, bostonId], tagMode: "and" });
-    expect(andMatch.map((c) => c.firstName)).toEqual(["FilterBoston"]);
 
     const byCompany = await repoA.listContacts({ company: "acme" });
     expect(byCompany.map((c) => c.firstName)).toEqual(["FilterBoston"]);

@@ -18,13 +18,11 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import {
   contacts,
-  contactTags,
   followUps,
   interactionContacts,
   interactions,
   invites,
   memories,
-  tags,
 } from "@/db/schema";
 import { normalizeTagName, sourceHash } from "@/lib/normalize";
 import { revisions } from "@/db/schema";
@@ -35,8 +33,6 @@ const camelToSnake = (s: string) =>
 
 export type ContactFilters = {
   q?: string;
-  tagIds?: string[];
-  tagMode?: "and" | "or";
   location?: string;
   company?: string;
   relationshipCategory?: string;
@@ -190,71 +186,13 @@ export function repoFor(workspaceId: string) {
           ),
         );
 
-      if (filters.tagIds && filters.tagIds.length > 0) {
-        if ((filters.tagMode ?? "or") === "or") {
-          conds.push(
-            exists(
-              db
-                .select({ one: sql`1` })
-                .from(contactTags)
-                .where(
-                  and(
-                    eq(contactTags.contactId, contacts.id),
-                    inArray(contactTags.tagId, filters.tagIds),
-                  ),
-                ),
-            ),
-          );
-        } else {
-          for (const tagId of filters.tagIds) {
-            conds.push(
-              exists(
-                db
-                  .select({ one: sql`1` })
-                  .from(contactTags)
-                  .where(
-                    and(
-                      eq(contactTags.contactId, contacts.id),
-                      eq(contactTags.tagId, tagId),
-                    ),
-                  ),
-              ),
-            );
-          }
-        }
-      }
-
       const rows = await db
         .select()
         .from(contacts)
         .where(and(...conds))
         .orderBy(asc(contacts.firstName), asc(contacts.lastName));
 
-      const tagRows =
-        rows.length === 0
-          ? []
-          : await db
-              .select({
-                contactId: contactTags.contactId,
-                id: tags.id,
-                name: tags.name,
-              })
-              .from(contactTags)
-              .innerJoin(tags, eq(tags.id, contactTags.tagId))
-              .where(
-                and(
-                  eq(contactTags.workspaceId, workspaceId),
-                  inArray(
-                    contactTags.contactId,
-                    rows.map((r) => r.id),
-                  ),
-                ),
-              );
-
-      return rows.map((c) => ({
-        ...c,
-        tags: tagRows.filter((t) => t.contactId === c.id),
-      }));
+      return rows;
     },
 
     /** Most recently added contacts — the Home view's "recently added" list. */
@@ -282,18 +220,8 @@ export function repoFor(workspaceId: string) {
         .where(and(eq(contacts.id, contactId), wsContacts()));
       if (!contact) return null;
 
-      const [contactTagRows, memoryRows, followUpRows, interactionRows] =
+      const [memoryRows, followUpRows, interactionRows] =
         await Promise.all([
-          db
-            .select({ id: tags.id, name: tags.name })
-            .from(contactTags)
-            .innerJoin(tags, eq(tags.id, contactTags.tagId))
-            .where(
-              and(
-                eq(contactTags.contactId, contactId),
-                eq(contactTags.workspaceId, workspaceId),
-              ),
-            ),
           db
             .select()
             .from(memories)
@@ -332,7 +260,6 @@ export function repoFor(workspaceId: string) {
 
       return {
         ...contact,
-        tags: contactTagRows,
         memories: memoryRows,
         followUps: followUpRows,
         interactions: interactionRows.map((r) => r.interaction),
@@ -503,179 +430,6 @@ export function repoFor(workspaceId: string) {
         .update(contacts)
         .set({ deletedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(contacts.id, contactId), wsContacts()));
-    },
-
-    // -------------------------------------------------------------------- tags
-
-    /** Tags with how many contacts carry each — the signal for consolidation. */
-    async listTagsWithCounts() {
-      return db
-        .select({
-          id: tags.id,
-          name: tags.name,
-          normalizedName: tags.normalizedName,
-          contactCount: sql<number>`count(${contactTags.contactId})::int`,
-        })
-        .from(tags)
-        .leftJoin(contactTags, eq(contactTags.tagId, tags.id))
-        .where(and(eq(tags.workspaceId, workspaceId), isNull(tags.deletedAt)))
-        .groupBy(tags.id, tags.name, tags.normalizedName)
-        .orderBy(desc(sql`count(${contactTags.contactId})`), asc(tags.normalizedName));
-    },
-
-    async listTags() {
-      return db
-        .select()
-        .from(tags)
-        .where(and(eq(tags.workspaceId, workspaceId), isNull(tags.deletedAt)))
-        .orderBy(asc(tags.normalizedName));
-    },
-
-    /**
-     * Resolves a tag by name, following merge tombstones so a merged-away
-     * name lands on its target instead of resurrecting. Creates if missing.
-     */
-    async findOrCreateTag(name: string, createdBy: "user" | "ai" = "user") {
-      const normalized = normalizeTagName(name);
-      if (!normalized) throw new Error("Tag name is empty after normalization");
-
-      const [existing] = await db
-        .select()
-        .from(tags)
-        .where(
-          and(
-            eq(tags.workspaceId, workspaceId),
-            eq(tags.normalizedName, normalized),
-          ),
-        );
-      if (existing) {
-        if (existing.mergedIntoTagId) {
-          const [target] = await db
-            .select()
-            .from(tags)
-            .where(
-              and(
-                eq(tags.id, existing.mergedIntoTagId),
-                eq(tags.workspaceId, workspaceId),
-              ),
-            );
-          if (target) return target;
-        }
-        return existing;
-      }
-
-      const [created] = await db
-        .insert(tags)
-        .values({ workspaceId, name: name.trim(), normalizedName: normalized, createdBy })
-        .returning();
-      return created;
-    },
-
-    /**
-     * Merge tag A into B per spec: repoint contact_tags to B, set A's
-     * merged_into_tag_id, soft-delete A. Runs in a transaction.
-     */
-    async mergeTags(sourceTagId: string, targetTagId: string) {
-      if (sourceTagId === targetTagId)
-        throw new Error("Cannot merge a tag into itself");
-
-      await db.transaction(async (tx) => {
-        const found = await tx
-          .select()
-          .from(tags)
-          .where(
-            and(
-              eq(tags.workspaceId, workspaceId),
-              inArray(tags.id, [sourceTagId, targetTagId]),
-              isNull(tags.deletedAt),
-            ),
-          );
-        if (found.length !== 2)
-          throw new Error("Both tags must exist in this workspace");
-
-        const sourceLinks = await tx
-          .select({ contactId: contactTags.contactId })
-          .from(contactTags)
-          .where(
-            and(
-              eq(contactTags.tagId, sourceTagId),
-              eq(contactTags.workspaceId, workspaceId),
-            ),
-          );
-
-        for (const { contactId } of sourceLinks) {
-          await tx
-            .insert(contactTags)
-            .values({ contactId, tagId: targetTagId, workspaceId })
-            .onConflictDoNothing();
-        }
-        await tx
-          .delete(contactTags)
-          .where(
-            and(
-              eq(contactTags.tagId, sourceTagId),
-              eq(contactTags.workspaceId, workspaceId),
-            ),
-          );
-        await tx
-          .update(tags)
-          .set({ mergedIntoTagId: targetTagId, deletedAt: new Date() })
-          .where(and(eq(tags.id, sourceTagId), eq(tags.workspaceId, workspaceId)));
-      });
-    },
-
-    /** Retire a tag outright: unlink it from every contact and tombstone it. */
-    async deleteTag(tagId: string) {
-      await db.transaction(async (tx) => {
-        const [tag] = await tx
-          .select()
-          .from(tags)
-          .where(
-            and(
-              eq(tags.id, tagId),
-              eq(tags.workspaceId, workspaceId),
-              isNull(tags.deletedAt),
-            ),
-          );
-        if (!tag) throw new Error("Tag not found");
-        await tx
-          .delete(contactTags)
-          .where(
-            and(
-              eq(contactTags.tagId, tagId),
-              eq(contactTags.workspaceId, workspaceId),
-            ),
-          );
-        await tx
-          .update(tags)
-          .set({ deletedAt: new Date() })
-          .where(eq(tags.id, tagId));
-      });
-    },
-
-    async setContactTags(contactId: string, tagNames: string[]) {
-      const resolved = [];
-      for (const name of tagNames) {
-        if (normalizeTagName(name)) resolved.push(await this.findOrCreateTag(name));
-      }
-      const tagIds = [...new Set(resolved.map((t) => t.id))];
-
-      await db.transaction(async (tx) => {
-        await tx
-          .delete(contactTags)
-          .where(
-            and(
-              eq(contactTags.contactId, contactId),
-              eq(contactTags.workspaceId, workspaceId),
-            ),
-          );
-        for (const tagId of tagIds) {
-          await tx
-            .insert(contactTags)
-            .values({ contactId, tagId, workspaceId })
-            .onConflictDoNothing();
-        }
-      });
     },
 
     // ------------------------------------------------------------ interactions

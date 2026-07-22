@@ -47,7 +47,7 @@ one go — don't stop to ask whether to extract:
 3. **Extract**: call `get_extraction_context`, follow the `instructions`
    field in the response exactly, and `submit_extraction_proposal`.
 4. **Report back concisely**: what you proposed (memories, follow-ups,
-   tags, updates), anything flagged as a probable duplicate, and anything
+   contact updates), anything flagged as a probable duplicate, and anything
    blocking (ambiguous names or new contacts). Tell me I can approve here
    in chat or on the Review page (link is in the tool response).
 5. **Apply only after I explicitly approve.** "Looks good" / "apply it"

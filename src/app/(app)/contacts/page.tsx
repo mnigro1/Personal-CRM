@@ -28,16 +28,12 @@ export default async function ContactsPage({
   const { workspace } = await requireSession();
   const repo = repoFor(workspace.id);
 
-  const allTags = await repo.listTags();
-  const selectedTagIds = ([] as string[]).concat(sp.tag ?? []);
 
   const filters: ContactFilters = {
     q: asStr(sp.q),
     location: asStr(sp.location),
     company: asStr(sp.company),
     relationshipCategory: asStr(sp.category),
-    tagIds: selectedTagIds.length ? selectedTagIds : undefined,
-    tagMode: asStr(sp.tagMode) === "and" ? "and" : "or",
     lastInteractionBefore: asStr(sp.lastBefore)
       ? new Date(sp.lastBefore as string)
       : undefined,
@@ -76,26 +72,6 @@ export default async function ContactsPage({
           <input type="checkbox" name="openFollowUps" value="1" defaultChecked={sp.openFollowUps === "1"} />
           Has open follow-ups
         </label>
-        {allTags.length > 0 && (
-          <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm md:col-span-4">
-            <span className="text-muted-foreground">Tags:</span>
-            {allTags.map((t) => (
-              <label key={t.id} className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  name="tag"
-                  value={t.id}
-                  defaultChecked={selectedTagIds.includes(t.id)}
-                />
-                {t.name}
-              </label>
-            ))}
-            <label className="ml-2 flex items-center gap-1">
-              <input type="checkbox" name="tagMode" value="and" defaultChecked={asStr(sp.tagMode) === "and"} />
-              match all
-            </label>
-          </div>
-        )}
         <div className="col-span-2 flex gap-2 md:col-span-4">
           <Button type="submit" size="sm">Filter</Button>
           {hasFilters && (
@@ -112,7 +88,6 @@ export default async function ContactsPage({
             <TableHead>Name</TableHead>
             <TableHead>Company / Role</TableHead>
             <TableHead>Location</TableHead>
-            <TableHead>Tags</TableHead>
             <TableHead>Last interaction</TableHead>
             <TableHead>LinkedIn</TableHead>
           </TableRow>
@@ -120,7 +95,7 @@ export default async function ContactsPage({
         <TableBody>
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
+              <TableCell colSpan={5} className="text-center text-muted-foreground">
                 No contacts yet.
               </TableCell>
             </TableRow>
@@ -140,13 +115,6 @@ export default async function ContactsPage({
                 {[c.currentRole, c.currentCompany].filter(Boolean).join(" @ ")}
               </TableCell>
               <TableCell className="text-sm">{c.location}</TableCell>
-              <TableCell>
-                <div className="flex flex-wrap gap-1">
-                  {c.tags.map((t) => (
-                    <Badge key={t.id} variant="secondary">{t.name}</Badge>
-                  ))}
-                </div>
-              </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {c.lastInteractionDate
                   ? new Date(c.lastInteractionDate).toLocaleDateString()

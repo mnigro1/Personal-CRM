@@ -34,7 +34,6 @@ describe("selectAllDefaults", () => {
           { contact: "0b7f8e9a-1c2d-4e5f-8a9b-0c1d2e3f4a5b", text: "a" },
           { contact: "0b7f8e9a-1c2d-4e5f-8a9b-0c1d2e3f4a5b", text: "b" },
         ],
-        tags: [{ contact: "0b7f8e9a-1c2d-4e5f-8a9b-0c1d2e3f4a5b", name: "T" }],
       }),
       flags: {
         new_memories: {
@@ -44,7 +43,6 @@ describe("selectAllDefaults", () => {
     };
     const s = selectAllDefaults(staged);
     expect(s.new_memories).toEqual([1]);
-    expect(s.tags).toEqual([0]);
   });
 });
 

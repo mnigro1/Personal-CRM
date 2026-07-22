@@ -16,11 +16,10 @@ Proposal JSON shape:
  "new_memories": [{"contact": uuid-or-mention, "text", "category": one of career|education|family|interests|goals|geography|projects|personal|preferences|opportunities|other, "event_date"?: "YYYY-MM-DD", "event_date_precision"?: exact|month|quarter|year|none}],
  "supersessions": [{"existing_memory_id", "reason", "replacement_memory_index"}],
  "already_known": [{"existing_memory_id", "restated"?}],
- "tags": [{"contact": uuid-or-mention, "name", "is_new"?}],
  "follow_ups": [{"contact": uuid-or-mention, "description", "reason" (REQUIRED), "due_date"?, "priority"?}],
  "contact_field_updates": [{"contact_id", "field": current_company|current_role|location|phone|linkedin_url|website, "old_value"?, "new_value"}]
 }
-Rules: NEVER guess between two plausible people — return status "ambiguous" with candidate hints. Mentioned-but-not-present people (spouse, colleague) become memories on the primary contact, NOT new contacts, unless the text implies the user has a direct relationship. Facts already in currentMemories go in already_known, not new_memories. Contradictions pair a new memory with a supersession (history is preserved). Resolve relative dates ("next spring") to absolute event_date using the interaction date and userTimezone, with honest precision. Reuse existingTags loosely ("healthcare" ≈ "Healthcare"); is_new only when nothing fits. Memories are single durable third-person facts, not conversation summaries. A note with no extractable facts is a valid outcome — don't invent content.`;
+Rules: NEVER guess between two plausible people — return status "ambiguous" with candidate hints. Mentioned-but-not-present people (spouse, colleague) become memories on the primary contact, NOT new contacts, unless the text implies the user has a direct relationship. Facts already in currentMemories go in already_known, not new_memories. Contradictions pair a new memory with a supersession (history is preserved). Resolve relative dates ("next spring") to absolute event_date using the interaction date and userTimezone, with honest precision. Memories are single durable third-person facts, not conversation summaries. A note with no extractable facts is a valid outcome — don't invent content.`;
 
 /**
  * Server-wide instructions delivered to every MCP client at initialize time
@@ -42,8 +41,6 @@ CAPTURING (when the user describes a conversation or pastes notes):
 3. Immediately (no need to ask) get_extraction_context, follow its instructions field exactly, submit_extraction_proposal.
 4. Report concisely what you proposed, flag probable duplicates and blocking items (ambiguous names, new contacts), and mention the review link.
 5. apply_extraction ONLY after the user explicitly approves in chat ("looks good" = everything non-blocked; a subset = exactly that subset). Never apply unprompted.
-
-TAG HYGIENE: tags are broad categories (10-30 total), not per-fact labels — facts belong in memories. Before tagging, check list_tags and reuse aggressively ("alumni" covers "AlumniChat"). Never tag transient states ("owed an update", "missing email") — those are follow-ups or just gaps. If the user asks to clean up tags (or you notice obvious near-duplicates), propose a consolidation plan from list_tags counts and, after they approve it in chat, execute it yourself: merge_tags for near-duplicates, delete_tag for junk that shouldn't exist, set_contact_tags to retag individual contacts. Never say tags can't be edited — these tools are the mechanism.
 
 DUPLICATE CONTACTS: before creating anyone, search_contacts for their name — create_contact also hard-blocks likely duplicates and returns candidates; ask the user "same person?" and reuse the existing record unless they confirm it's someone new (then retry with force: true). find_duplicate_contacts scans for existing duplicate pairs on request.
 
@@ -83,7 +80,7 @@ export function registerCrmTools(
     {
       annotations: { title: "Search contacts", ...readOnly },
       description:
-        "Search contacts in the workspace. All filters optional; returns matching contacts with their tags.",
+        "Search contacts in the workspace. All filters optional.",
       inputSchema: {
         q: z.string().optional().describe("Free text across names, notes, memories, company"),
         location: z.string().optional(),
@@ -115,7 +112,6 @@ export function registerCrmTools(
           company: c.currentCompany,
           role: c.currentRole,
           location: c.location,
-          tags: c.tags.map((t) => t.name),
           lastInteractionDate: c.lastInteractionDate,
         })),
       );
@@ -127,7 +123,7 @@ export function registerCrmTools(
     {
       annotations: { title: "Get contact", ...readOnly },
       description:
-        "Full record for one contact: fields, memories, interactions (with raw source), open follow-ups, tags.",
+        "Full record for one contact: fields, memories, interactions (with raw source), open follow-ups.",
       inputSchema: { contactId: z.string().uuid() },
     },
     async ({ contactId }) => {
@@ -172,7 +168,6 @@ export function registerCrmTools(
         dateFirstMet: z.string().optional().describe("YYYY-MM-DD"),
         relationshipCategory: z.string().optional(),
         notes: z.string().optional(),
-        tags: z.array(z.string()).optional(),
         force: z
           .boolean()
           .default(false)
@@ -181,7 +176,7 @@ export function registerCrmTools(
           ),
       },
     },
-    async ({ tags: tagNames, emails, force, ...fields }) => {
+    async ({ emails, force, ...fields }) => {
       // Duplicate gate: same person under two entries is the failure that
       // splits a relationship's history. Block on likely matches unless the
       // caller explicitly confirms this is someone new.
@@ -210,7 +205,6 @@ export function registerCrmTools(
         ...fields,
         emails: emails ?? [],
       });
-      if (tagNames?.length) await repo.setContactTags(contact.id, tagNames);
       return json({ created: true, contactId: contact.id });
     },
   );
@@ -283,7 +277,7 @@ export function registerCrmTools(
     {
       annotations: { title: "Get extraction context", ...readOnly },
       description:
-        "Everything needed to extract one interaction: raw source, user timezone (anchor all relative dates to it), contact roster for entity resolution, current memories of linked contacts (facts already known), existing tags (reuse, don't invent), open follow-ups, and the extraction rules to follow. Then call submit_extraction_proposal.",
+        "Everything needed to extract one interaction: raw source, user timezone (anchor all relative dates to it), contact roster for entity resolution, current memories of linked contacts (facts already known), open follow-ups, and the extraction rules to follow. Then call submit_extraction_proposal.",
       inputSchema: { interactionId: z.string().uuid() },
     },
     async ({ interactionId }) => {
@@ -373,66 +367,6 @@ export function registerCrmTools(
       inputSchema: { batchId: z.string().uuid() },
     },
     async ({ batchId }) => json(await repo.undoBatch(batchId, actorUserId)),
-  );
-
-  server.registerTool(
-    "list_tags",
-    {
-      annotations: { title: "List tags", ...readOnly },
-      description:
-        "All workspace tags with how many contacts carry each. Use to reuse existing tags and to spot sprawl worth consolidating.",
-      inputSchema: {},
-    },
-    async () => json(await repo.listTagsWithCounts()),
-  );
-
-  server.registerTool(
-    "merge_tags",
-    {
-      description:
-        "Merge one tag into another: every contact on the source tag moves to the target, and the source is retired (old references resolve to the target — it can't come back). Use for consolidating near-duplicates like 'alumni'/'AlumniChat'. Propose the merge plan in chat and get the user's OK before calling.",
-      inputSchema: {
-        sourceTagId: z.string().uuid().describe("The tag being retired"),
-        targetTagId: z.string().uuid().describe("The tag that absorbs it"),
-      },
-    },
-    async ({ sourceTagId, targetTagId }) => {
-      await repo.mergeTags(sourceTagId, targetTagId);
-      return json({ merged: true, sourceTagId, targetTagId });
-    },
-  );
-
-  server.registerTool(
-    "set_contact_tags",
-    {
-      annotations: { title: "Set contact tags", ...safeWrite, idempotentHint: true },
-      description:
-        "Replace one contact's full tag set (names, not ids — existing tags are reused via normalization, new ones created). The way to retag contacts during a user-approved tag cleanup. Pass the complete final list; omitted tags are removed from this contact.",
-      inputSchema: {
-        contactId: z.string().uuid(),
-        tags: z.array(z.string()).describe("The contact's complete new tag list"),
-      },
-    },
-    async ({ contactId, tags: tagNames }) => {
-      const contact = await repo.getContact(contactId);
-      if (!contact) return json({ error: "Contact not found" });
-      await repo.setContactTags(contactId, tagNames);
-      const updated = await repo.getContact(contactId);
-      return json({ updated: true, tags: updated?.tags.map((t) => t.name) ?? [] });
-    },
-  );
-
-  server.registerTool(
-    "delete_tag",
-    {
-      description:
-        "Retire a tag entirely: removes it from every contact and tombstones it (no merge target). For junk tags like 'missing email' that shouldn't exist at all. Get the user's OK on the cleanup plan before calling.",
-      inputSchema: { tagId: z.string().uuid() },
-    },
-    async ({ tagId }) => {
-      await repo.deleteTag(tagId);
-      return json({ deleted: true, tagId });
-    },
   );
 
   server.registerTool(

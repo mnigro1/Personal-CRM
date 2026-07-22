@@ -2,14 +2,12 @@ import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   contacts,
-  contactTags,
   extractions,
   followUps,
   interactionContacts,
   interactions,
   memories,
   revisions,
-  tags,
   users,
   workspaces,
 } from "@/db/schema";
@@ -28,10 +26,6 @@ const DUPLICATE_SIMILARITY_THRESHOLD = 0.85;
 /** Base-repo methods the extraction ops depend on. */
 type BaseRepo = {
   recomputeLastInteraction(contactIds: string[]): Promise<void>;
-  findOrCreateTag(
-    name: string,
-    createdBy?: "user" | "ai",
-  ): Promise<typeof tags.$inferSelect>;
   findSimilarContacts(
     firstName: string,
     lastName?: string | null,
@@ -302,13 +296,6 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
                 ),
               );
 
-      const workspaceTags = await db
-        .select({ id: tags.id, name: tags.name })
-        .from(tags)
-        .where(
-          and(eq(tags.workspaceId, workspaceId), sql`${tags.deletedAt} IS NULL`),
-        );
-
       return {
         interaction: {
           id: interaction.id,
@@ -323,7 +310,6 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         roster,
         currentMemories: linkedMemories,
         openFollowUps: linkedFollowUps,
-        existingTags: workspaceTags,
         promptVersion: PROMPT_VERSION,
       };
     },
@@ -378,7 +364,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         referencedContactIds.add(u.contact_id);
       for (const item of [
         ...proposal.new_memories,
-        ...proposal.tags,
+        ...[],
         ...proposal.follow_ups,
       ]) {
         if (/^[0-9a-f-]{36}$/i.test(item.contact))
@@ -574,7 +560,6 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         memoriesAdded: 0,
         memoriesSuperseded: 0,
         memoriesConfirmed: 0,
-        tagsApplied: 0,
         followUpsAdded: 0,
         fieldsUpdated: 0,
       };
@@ -801,36 +786,6 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             field: "last_confirmed_at",
             oldValue: old.lastConfirmedAt?.toISOString() ?? null,
             newValue: interaction.occurredAt.toISOString(),
-          });
-        }
-
-        // Tags — reuse via tombstone-aware findOrCreateTag.
-        for (const i of selections.tags) {
-          const t = proposal.tags[i];
-          if (!t) continue;
-          const contactId = resolveRef(t.contact);
-          if (!contactId) continue;
-          const tag = await base.findOrCreateTag(t.name, "ai");
-          const existing = await tx
-            .select({ contactId: contactTags.contactId })
-            .from(contactTags)
-            .where(
-              and(
-                eq(contactTags.contactId, contactId),
-                eq(contactTags.tagId, tag.id),
-              ),
-            );
-          if (existing.length > 0) continue;
-          await tx
-            .insert(contactTags)
-            .values({ contactId, tagId: tag.id, workspaceId });
-          touchedContacts.add(contactId);
-          counts.tagsApplied++;
-          await rev({
-            entityType: "contact_tag",
-            entityId: contactId,
-            field: "tag",
-            newValue: { tagId: tag.id, tagName: tag.name },
           });
         }
 
@@ -1093,20 +1048,6 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
           .update(contacts)
           .set({ [column]: r.oldValue as string | null, updatedAt: new Date() })
           .where(eq(contacts.id, r.entityId));
-        touchedContacts.add(r.entityId);
-        return true;
-      }
-      case "contact_tag": {
-        const tagId = (created as { tagId?: string } | null)?.tagId;
-        if (!tagId) return false;
-        await tx
-          .delete(contactTags)
-          .where(
-            and(
-              eq(contactTags.contactId, r.entityId),
-              eq(contactTags.tagId, tagId),
-            ),
-          );
         touchedContacts.add(r.entityId);
         return true;
       }

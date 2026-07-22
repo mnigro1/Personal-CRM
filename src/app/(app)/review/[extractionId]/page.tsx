@@ -220,24 +220,6 @@ export default async function ReviewScreen({
           </Card>
         )}
 
-        {p.tags.length > 0 && (
-          <Card>
-            <CardHeader><CardTitle>Tags</CardTitle></CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              {p.tags.map((t, i) => (
-                <label key={i} className="flex items-center gap-2 text-sm">
-                  {checkbox(`tag-${i}`, true)}
-                  <Badge variant={t.is_new ? "default" : "secondary"}>
-                    {t.name}
-                    {t.is_new && " (new)"}
-                  </Badge>
-                  <span className="text-muted-foreground">→ {refLabel(t.contact)}</span>
-                </label>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
         {p.follow_ups.length > 0 && (
           <Card>
             <CardHeader><CardTitle>Follow-ups</CardTitle></CardHeader>
