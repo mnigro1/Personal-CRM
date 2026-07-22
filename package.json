@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "if [ -n \"$DATABASE_URL\" ]; then npm run db:migrate; else echo 'No DATABASE_URL in this environment - skipping migrations'; fi && next build",
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",

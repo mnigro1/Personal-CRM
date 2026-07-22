@@ -27,6 +27,7 @@ import {
 import { normalizeTagName, sourceHash } from "@/lib/normalize";
 import { revisions } from "@/db/schema";
 import { extractionOpsFor } from "@/db/repo-extraction";
+import { draftOpsFor } from "@/db/repo-drafts";
 
 const camelToSnake = (s: string) =>
   s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -800,6 +801,10 @@ export function repoFor(workspaceId: string) {
             id: contacts.id,
             firstName: contacts.firstName,
             lastName: contacts.lastName,
+            preferredName: contacts.preferredName,
+            // Drafting needs these to know which channels are usable.
+            phone: contacts.phone,
+            emails: contacts.emails,
           },
         })
         .from(followUps)
@@ -840,7 +845,11 @@ export function repoFor(workspaceId: string) {
     },
   };
 
-  return { ...base, ...extractionOpsFor(workspaceId, base) };
+  return {
+    ...base,
+    ...extractionOpsFor(workspaceId, base),
+    ...draftOpsFor(workspaceId, base),
+  };
 }
 
 export type Repo = ReturnType<typeof repoFor>;

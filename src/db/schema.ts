@@ -88,6 +88,25 @@ export const followUpStatus = pgEnum("follow_up_status", [
   "dismissed",
 ]);
 
+export const messageChannel = pgEnum("message_channel", [
+  "text",
+  "slack",
+  "teams",
+  "email",
+  "other",
+]);
+
+// `sent` = this draft's text went out. `sent_other` = outreach happened but
+// this text isn't what was sent, so nothing is logged to Layer 1. Collapsing
+// those two into `discarded` would make "did I ever get back to them?" lie.
+export const messageDraftStatus = pgEnum("message_draft_status", [
+  "requested",
+  "drafted",
+  "sent",
+  "sent_other",
+  "discarded",
+]);
+
 export const extractionRunStatus = pgEnum("extraction_run_status", [
   "pending",
   "proposed",
@@ -413,6 +432,58 @@ export const followUps = pgTable(
       .defaultNow(),
   },
   (t) => [index("follow_ups_workspace_idx").on(t.workspaceId)],
+);
+
+// ---------------------------------------------------------------------------
+// Message drafts (Layer 3 — regenerable, never a substitute for Layer 1)
+//
+// A draft is AI-generated convenience. It is never written into
+// interactions.raw_source on its own; only text the user affirmatively
+// confirms they sent becomes Layer 1. Dropping this whole table would cost
+// nothing but convenience — that's the Layer 3 test, and this passes it.
+// ---------------------------------------------------------------------------
+
+export const messageDrafts = pgTable(
+  "message_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    // Nullable so a draft can later hang off a contact with no follow-up.
+    followUpId: uuid("follow_up_id").references(() => followUps.id, {
+      onDelete: "cascade",
+    }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    channel: messageChannel("channel").notNull(),
+    // Required when channel = 'other' ("LinkedIn DM"); shapes the tone.
+    channelLabel: text("channel_label"),
+    status: messageDraftStatus("status").notNull().default("requested"),
+    subject: text("subject"),
+    // Current text — what gets copied, and what gets logged if the user
+    // confirms they sent it as written. User edits autosave here.
+    body: text("body"),
+    // The model's original, untouched. Powers revert-to-original and the
+    // dirty check that guards Regenerate.
+    aiBody: text("ai_body"),
+    instruction: text("instruction"),
+    contextJson: jsonb("context_json"),
+    model: text("model"),
+    promptVersion: text("prompt_version"),
+    createdBy: createdBy("created_by").notNull().default("user"),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    draftedAt: timestamp("drafted_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("message_drafts_workspace_idx").on(t.workspaceId),
+    index("message_drafts_follow_up_idx").on(t.followUpId),
+    index("message_drafts_status_idx").on(t.workspaceId, t.status),
+  ],
 );
 
 // ---------------------------------------------------------------------------

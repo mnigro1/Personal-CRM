@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { completeFollowUpFromHomeAction } from "@/app/actions";
+import { DoneDialog } from "@/components/done-dialog";
+import { DraftMessageButton } from "@/components/draft-message-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +29,12 @@ export default async function HomePage() {
     repo.listFailedExtractions(),
     repo.listRecentContacts(5),
   ]);
+
+  // A draft already in flight turns the button into "Open draft" instead of
+  // silently starting a second one.
+  const activeDrafts = await repo.activeDraftsByFollowUp(
+    followUps.map((f) => f.followUp.id),
+  );
 
   // Compare on the user's local calendar day, not UTC.
   const todayStr = new Intl.DateTimeFormat("en-CA", {
@@ -73,7 +80,7 @@ export default async function HomePage() {
             {name}
           </Link>
           <ul className="mt-1 space-y-2">
-            {items.map(({ followUp: f }) => (
+            {items.map(({ followUp: f, contact }) => (
               <li key={f.id} className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm">{f.description}</p>
@@ -95,11 +102,25 @@ export default async function HomePage() {
                     )}
                   </p>
                 </div>
-                <form action={completeFollowUpFromHomeAction.bind(null, f.id)}>
-                  <Button variant="outline" size="sm" type="submit">
-                    Done
-                  </Button>
-                </form>
+                <div className="flex shrink-0 gap-2">
+                  <DraftMessageButton
+                    contactId={contact.id}
+                    followUpId={f.id}
+                    contactName={
+                      contact.preferredName ?? contact.firstName
+                    }
+                    hasPhone={!!contact.phone}
+                    hasEmail={contact.emails.length > 0}
+                    existingDraftId={activeDrafts.get(f.id)?.id}
+                  />
+                  <DoneDialog
+                    followUpId={f.id}
+                    contactId={contact.id}
+                    draftId={activeDrafts.get(f.id)?.id ?? null}
+                    hasBody={!!activeDrafts.get(f.id)?.body}
+                    returnTo="/"
+                  />
+                </div>
               </li>
             ))}
           </ul>
