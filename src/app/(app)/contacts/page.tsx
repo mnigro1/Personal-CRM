@@ -46,6 +46,11 @@ export default async function ContactsPage({
   };
 
   const rows = await repo.listContacts(filters);
+  const openFollowUps = await repo.listOpenFollowUps();
+  const followUpCounts = openFollowUps.reduce((m, f) => {
+    m.set(f.contact.id, (m.get(f.contact.id) ?? 0) + 1);
+    return m;
+  }, new Map<string, number>());
   const hasFilters = Object.values(sp).some((v) => v !== undefined && v !== "");
 
   return (
@@ -87,15 +92,14 @@ export default async function ContactsPage({
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Company / Role</TableHead>
-            <TableHead>Location</TableHead>
             <TableHead>Last interaction</TableHead>
-            <TableHead>LinkedIn</TableHead>
+            <TableHead>Follow-ups</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
+              <TableCell colSpan={4} className="text-center text-muted-foreground">
                 No contacts yet.
               </TableCell>
             </TableRow>
@@ -109,27 +113,42 @@ export default async function ContactsPage({
               deleteMessage={`Delete ${c.preferredName ?? c.firstName}? Their memories and interactions are archived, not destroyed.`}
             >
               <TableCell className="font-medium">
-                {c.preferredName ?? c.firstName} {c.lastName ?? ""}
+                <span className="flex items-center gap-1.5">
+                  {c.preferredName ?? c.firstName} {c.lastName ?? ""}
+                  {c.linkedinUrl && (
+                    <a
+                      href={c.linkedinUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="LinkedIn profile"
+                      className="text-xs font-normal text-muted-foreground hover:text-foreground"
+                    >
+                      ↗
+                    </a>
+                  )}
+                </span>
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {[c.currentRole, c.currentCompany].filter(Boolean).join(" @ ")}
+                {c.location && (
+                  <span className="whitespace-nowrap">
+                    {(c.currentRole || c.currentCompany) && " · "}
+                    {c.location}
+                  </span>
+                )}
               </TableCell>
-              <TableCell className="text-sm">{c.location}</TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {c.lastInteractionDate
                   ? new Date(c.lastInteractionDate).toLocaleDateString()
                   : "—"}
               </TableCell>
-              <TableCell>
-                {c.linkedinUrl && (
-                  <a
-                    href={c.linkedinUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-muted-foreground underline hover:text-foreground"
-                  >
-                    Profile ↗
-                  </a>
+              <TableCell className="text-sm">
+                {followUpCounts.get(c.id) ? (
+                  <Badge variant="secondary">
+                    {followUpCounts.get(c.id)} open
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
                 )}
               </TableCell>
             </ClickableRow>
