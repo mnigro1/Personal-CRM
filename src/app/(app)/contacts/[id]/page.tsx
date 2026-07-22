@@ -248,6 +248,9 @@ export default async function ContactPage({
                     hasPhone={!!contact.phone}
                     hasEmail={contact.emails.length > 0}
                     existingDraftId={activeDrafts.get(f.id)?.id}
+                    existingDraftWritten={
+                      activeDrafts.get(f.id)?.status === "drafted"
+                    }
                   />
                   <DoneDialog
                     followUpId={f.id}

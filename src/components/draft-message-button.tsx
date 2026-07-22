@@ -28,6 +28,7 @@ export function DraftMessageButton({
   hasPhone,
   hasEmail,
   existingDraftId,
+  existingDraftWritten = false,
 }: {
   contactId: string;
   followUpId: string;
@@ -35,6 +36,8 @@ export function DraftMessageButton({
   hasPhone: boolean;
   hasEmail: boolean;
   existingDraftId?: string;
+  /** True once the AI has actually written a body (status `drafted`). */
+  existingDraftWritten?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // Default to the first channel this contact can actually receive — a
@@ -44,6 +47,9 @@ export function DraftMessageButton({
   );
 
   // A draft already in flight — go to it rather than starting a second one.
+  // "Open draft" only once text actually exists: a `requested` draft is still
+  // waiting on the AI, and promising a draft that isn't written is a lie the
+  // user only discovers after clicking.
   if (existingDraftId) {
     return (
       <Button
@@ -52,7 +58,7 @@ export function DraftMessageButton({
         nativeButton={false}
         render={<Link href={`/drafts/${existingDraftId}`} />}
       >
-        Open draft
+        {existingDraftWritten ? "Open draft" : "Draft pending…"}
       </Button>
     );
   }

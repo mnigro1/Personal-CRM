@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeftIcon, UserIcon } from "lucide-react";
 import { discardDraftAction, regenerateDraftAction } from "@/app/actions";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DoneDialog } from "@/components/done-dialog";
@@ -166,14 +167,26 @@ export default async function DraftPage({
         </Card>
       )}
 
-      <Button
-        variant="outline"
-        size="sm"
-        nativeButton={false}
-        render={<Link href={`/contacts/${contact.id}`} />}
-      >
-        Back to {contactName}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/" />}
+        >
+          <ArrowLeftIcon />
+          Back to follow-ups
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          nativeButton={false}
+          render={<Link href={`/contacts/${contact.id}`} />}
+        >
+          <UserIcon />
+          View {contactName}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -201,7 +214,20 @@ async function PendingCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <CopyPromptButton prompt={prompt} />
+        <div className="flex flex-wrap items-center gap-2">
+          <CopyPromptButton prompt={prompt} />
+          {/* Without this, a draft the AI never picks up can only be cleared
+              by closing its follow-up — a dead end with no way back. */}
+          <form action={discardDraftAction.bind(null, draftId)}>
+            <Button variant="ghost" size="sm" type="submit">
+              Cancel this draft
+            </Button>
+          </form>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Not seeing it appear? If your Claude session started before drafting
+          existed, restart it so the new tools load.
+        </p>
         <details>
           <summary className="cursor-pointer text-xs text-muted-foreground">
             Show the context being used
