@@ -1,173 +1,260 @@
 import Link from "next/link";
-import { deleteContactAction } from "@/app/actions";
-import { ClickableRow } from "@/components/clickable-row";
-import { repoFor, type ContactFilters } from "@/db/repo";
-import { requireSession } from "@/lib/session";
+import { completeFollowUpFromHomeAction } from "@/app/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { repoFor } from "@/db/repo";
+import { requireSession } from "@/lib/session";
 
-function asStr(v: string | string[] | undefined): string | undefined {
-  return typeof v === "string" && v !== "" ? v : undefined;
-}
-
-export default async function ContactsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const sp = await searchParams;
-  const { workspace } = await requireSession();
+/**
+ * Home (spec §6): follow-ups due or overdue grouped by contact, the capture
+ * queue, and recently added contacts. Deliberately nothing else — this is
+ * not the weekly digest or the maintenance engine.
+ */
+export default async function HomePage() {
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
 
-  const allTags = await repo.listTags();
-  const selectedTagIds = ([] as string[]).concat(sp.tag ?? []);
+  const [followUps, pending, proposed, failed, recent] = await Promise.all([
+    repo.listOpenFollowUps(),
+    repo.listPendingCaptures(),
+    repo.listProposedExtractions(),
+    repo.listFailedExtractions(),
+    repo.listRecentContacts(5),
+  ]);
 
-  const filters: ContactFilters = {
-    q: asStr(sp.q),
-    location: asStr(sp.location),
-    company: asStr(sp.company),
-    relationshipCategory: asStr(sp.category),
-    tagIds: selectedTagIds.length ? selectedTagIds : undefined,
-    tagMode: asStr(sp.tagMode) === "and" ? "and" : "or",
-    lastInteractionBefore: asStr(sp.lastBefore)
-      ? new Date(sp.lastBefore as string)
-      : undefined,
-    lastInteractionAfter: asStr(sp.lastAfter)
-      ? new Date(sp.lastAfter as string)
-      : undefined,
-    dateFirstMetFrom: asStr(sp.metFrom),
-    dateFirstMetTo: asStr(sp.metTo),
-    hasOpenFollowUps: sp.openFollowUps === "1",
+  // Compare on the user's local calendar day, not UTC.
+  const todayStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: user.timezone,
+  }).format(new Date());
+  const inAWeek = new Intl.DateTimeFormat("en-CA", { timeZone: user.timezone })
+    .format(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+
+  const dated = followUps.filter((f) => f.followUp.dueDate);
+  const overdue = dated.filter((f) => f.followUp.dueDate! < todayStr);
+  const dueSoon = dated.filter(
+    (f) => f.followUp.dueDate! >= todayStr && f.followUp.dueDate! <= inAWeek,
+  );
+  const later = dated.filter((f) => f.followUp.dueDate! > inAWeek);
+  const undated = followUps.filter((f) => !f.followUp.dueDate);
+
+  type Row = (typeof followUps)[number];
+  const groupByContact = (rows: Row[]) => {
+    const map = new Map<string, { name: string; rows: Row[] }>();
+    for (const r of rows) {
+      const name = `${r.contact.firstName} ${r.contact.lastName ?? ""}`.trim();
+      const entry = map.get(r.contact.id) ?? { name, rows: [] };
+      entry.rows.push(r);
+      map.set(r.contact.id, entry);
+    }
+    return [...map.entries()];
   };
 
-  const rows = await repo.listContacts(filters);
-  const hasFilters = Object.values(sp).some((v) => v !== undefined && v !== "");
+  const FollowUpGroup = ({
+    rows,
+    tone,
+  }: {
+    rows: Row[];
+    tone?: "overdue";
+  }) => (
+    <div className="space-y-3">
+      {groupByContact(rows).map(([contactId, { name, rows: items }]) => (
+        <div key={contactId} className="rounded border p-3">
+          <Link
+            href={`/contacts/${contactId}`}
+            className="text-sm font-medium hover:underline"
+          >
+            {name}
+          </Link>
+          <ul className="mt-1 space-y-2">
+            {items.map(({ followUp: f }) => (
+              <li key={f.id} className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm">{f.description}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {f.reason}
+                  </p>
+                  <p className="mt-0.5 text-xs">
+                    <span
+                      className={
+                        tone === "overdue"
+                          ? "font-medium text-destructive"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      due {f.dueDate}
+                    </span>
+                    {f.priority === "high" && (
+                      <Badge variant="secondary" className="ml-2">high</Badge>
+                    )}
+                  </p>
+                </div>
+                <form action={completeFollowUpFromHomeAction.bind(null, f.id)}>
+                  <Button variant="outline" size="sm" type="submit">
+                    Done
+                  </Button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+
+  const queueCount = pending.length + proposed.length + failed.length;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Contacts</h1>
-        <Button nativeButton={false} render={<Link href="/contacts/new" />}>Add contact</Button>
+        <h1 className="text-2xl font-semibold">Home</h1>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            nativeButton={false}
+            render={<Link href="/interactions/new" />}
+          >
+            Log interaction
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<Link href="/contacts/new" />}
+          >
+            Add contact
+          </Button>
+        </div>
       </div>
 
-      <form className="grid grid-cols-2 gap-3 rounded-lg border p-4 md:grid-cols-4">
-        <Input name="q" placeholder="Search name, notes, memories…" defaultValue={asStr(sp.q) ?? ""} className="col-span-2" />
-        <Input name="location" placeholder="Location" defaultValue={asStr(sp.location) ?? ""} />
-        <Input name="company" placeholder="Company" defaultValue={asStr(sp.company) ?? ""} />
-        <Input name="category" placeholder="Relationship category" defaultValue={asStr(sp.category) ?? ""} />
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          Last interaction before
-          <input type="date" name="lastBefore" defaultValue={asStr(sp.lastBefore) ?? ""} className="rounded border px-2 py-1" />
-        </label>
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          after
-          <input type="date" name="lastAfter" defaultValue={asStr(sp.lastAfter) ?? ""} className="rounded border px-2 py-1" />
-        </label>
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          <input type="checkbox" name="openFollowUps" value="1" defaultChecked={sp.openFollowUps === "1"} />
-          Has open follow-ups
-        </label>
-        {allTags.length > 0 && (
-          <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm md:col-span-4">
-            <span className="text-muted-foreground">Tags:</span>
-            {allTags.map((t) => (
-              <label key={t.id} className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  name="tag"
-                  value={t.id}
-                  defaultChecked={selectedTagIds.includes(t.id)}
-                />
-                {t.name}
-              </label>
-            ))}
-            <label className="ml-2 flex items-center gap-1">
-              <input type="checkbox" name="tagMode" value="and" defaultChecked={asStr(sp.tagMode) === "and"} />
-              match all
-            </label>
-          </div>
-        )}
-        <div className="col-span-2 flex gap-2 md:col-span-4">
-          <Button type="submit" size="sm">Filter</Button>
-          {hasFilters && (
-            <Button nativeButton={false} variant="ghost" size="sm" render={<Link href="/" />}>
-              Clear
-            </Button>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Follow-ups
+            {overdue.length > 0 && (
+              <Badge variant="destructive">{overdue.length} overdue</Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            The follow-through half of the job — everything you said you&apos;d do.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {followUps.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Nothing open. Log an interaction and your AI will propose
+              follow-ups worth keeping.
+            </p>
           )}
-        </div>
-      </form>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Company / Role</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Tags</TableHead>
-            <TableHead>Last interaction</TableHead>
-            <TableHead>LinkedIn</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                No contacts yet.
-              </TableCell>
-            </TableRow>
+          {overdue.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-destructive">
+                Overdue
+              </h3>
+              <FollowUpGroup rows={overdue} tone="overdue" />
+            </section>
           )}
-          {rows.map((c) => (
-            <ClickableRow
-              key={c.id}
-              href={`/contacts/${c.id}`}
-              editHref={`/contacts/${c.id}/edit`}
-              deleteAction={deleteContactAction.bind(null, c.id)}
-              deleteMessage={`Delete ${c.preferredName ?? c.firstName}? Their memories and interactions are archived, not destroyed.`}
+
+          {dueSoon.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Next 7 days
+              </h3>
+              <FollowUpGroup rows={dueSoon} />
+            </section>
+          )}
+
+          {(later.length > 0 || undated.length > 0) && (
+            <details>
+              <summary className="cursor-pointer text-xs text-muted-foreground">
+                Later ({later.length + undated.length})
+              </summary>
+              <div className="mt-2 space-y-3">
+                {later.length > 0 && <FollowUpGroup rows={later} />}
+                {undated.length > 0 && <FollowUpGroup rows={undated} />}
+              </div>
+            </details>
+          )}
+        </CardContent>
+      </Card>
+
+      {queueCount > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Capture queue
+              <Badge variant="secondary">{queueCount}</Badge>
+            </CardTitle>
+            <CardDescription>
+              {proposed.length > 0
+                ? "Proposals are waiting for your review."
+                : "Captured and safe — your AI turns these into memories next time you chat."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {proposed.length > 0 && (
+              <p>
+                <strong>{proposed.length}</strong> proposal
+                {proposed.length === 1 ? "" : "s"} to review
+              </p>
+            )}
+            {pending.length > 0 && (
+              <p>
+                <strong>{pending.length}</strong> capture
+                {pending.length === 1 ? "" : "s"} awaiting extraction
+              </p>
+            )}
+            {failed.length > 0 && (
+              <p className="text-destructive">
+                <strong>{failed.length}</strong> failed extraction
+                {failed.length === 1 ? "" : "s"} — the notes are safe
+              </p>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              nativeButton={false}
+              render={<Link href="/review" />}
             >
-              <TableCell className="font-medium">
-                {c.preferredName ?? c.firstName} {c.lastName ?? ""}
-              </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {[c.currentRole, c.currentCompany].filter(Boolean).join(" @ ")}
-              </TableCell>
-              <TableCell className="text-sm">{c.location}</TableCell>
-              <TableCell>
-                <div className="flex flex-wrap gap-1">
-                  {c.tags.map((t) => (
-                    <Badge key={t.id} variant="secondary">{t.name}</Badge>
-                  ))}
-                </div>
-              </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {c.lastInteractionDate
-                  ? new Date(c.lastInteractionDate).toLocaleDateString()
-                  : "—"}
-              </TableCell>
-              <TableCell>
-                {c.linkedinUrl && (
-                  <a
-                    href={c.linkedinUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-muted-foreground underline hover:text-foreground"
+              Open review
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recently added</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recent.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No contacts yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {recent.map((c) => (
+                <li key={c.id} className="flex items-baseline justify-between gap-3">
+                  <Link
+                    href={`/contacts/${c.id}`}
+                    className="text-sm font-medium hover:underline"
                   >
-                    Profile ↗
-                  </a>
-                )}
-              </TableCell>
-            </ClickableRow>
-          ))}
-        </TableBody>
-      </Table>
+                    {c.preferredName ?? c.firstName} {c.lastName ?? ""}
+                  </Link>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[c.currentRole, c.currentCompany].filter(Boolean).join(" @ ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
