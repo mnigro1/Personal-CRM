@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   addFollowUpAction,
   addMemoryAction,
@@ -36,7 +36,13 @@ export default async function ContactPage({
   const { workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const contact = await repo.getContact(id);
-  if (!contact) notFound();
+  // A merged-away record still resolves: send old links to the survivor
+  // rather than 404ing on a person the user definitely still knows.
+  if (!contact) {
+    const mergedInto = await repo.resolveMergedContact(id);
+    if (mergedInto) redirect(`/contacts/${mergedInto}`);
+    notFound();
+  }
 
   const activeDrafts = await repo.activeDraftsByFollowUp(
     contact.followUps.filter((f) => f.status === "open").map((f) => f.id),

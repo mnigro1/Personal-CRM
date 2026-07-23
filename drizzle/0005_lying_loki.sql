@@ -1,0 +1,1 @@
+ALTER TABLE "contacts" ADD COLUMN "merged_into_contact_id" uuid;

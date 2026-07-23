@@ -28,6 +28,7 @@ import { normalizeTagName, sourceHash } from "@/lib/normalize";
 import { revisions } from "@/db/schema";
 import { extractionOpsFor } from "@/db/repo-extraction";
 import { draftOpsFor } from "@/db/repo-drafts";
+import { mergeOpsFor } from "@/db/repo-merge";
 
 const camelToSnake = (s: string) =>
   s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -849,6 +850,7 @@ export function repoFor(workspaceId: string) {
     ...base,
     ...extractionOpsFor(workspaceId, base),
     ...draftOpsFor(workspaceId, base),
+    ...mergeOpsFor(workspaceId, base),
   };
 }
 

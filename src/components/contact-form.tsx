@@ -10,10 +10,13 @@ export function ContactForm({
   action,
   contact,
   submitLabel,
+  hiddenFields,
 }: {
   action: (formData: FormData) => Promise<void>;
-  contact?: Contact;
+  contact?: Partial<Contact>;
   submitLabel: string;
+  /** Carried through the duplicate-confirmation round trip. */
+  hiddenFields?: Record<string, string>;
 }) {
   const field = (
     name: string,
@@ -29,6 +32,9 @@ export function ContactForm({
 
   return (
     <form action={action} className="max-w-2xl space-y-4">
+      {Object.entries(hiddenFields ?? {}).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor="firstName">First name *</Label>
