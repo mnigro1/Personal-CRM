@@ -57,7 +57,16 @@ export default async function ContactsPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Contacts</h1>
-        <Button nativeButton={false} render={<Link href="/contacts/new" />}>Add contact</Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/contacts/duplicates" />}
+          >
+            Find duplicates
+          </Button>
+          <Button nativeButton={false} render={<Link href="/contacts/new" />}>Add contact</Button>
+        </div>
       </div>
 
       <form className="grid grid-cols-2 gap-3 rounded-lg border p-4 md:grid-cols-4">

@@ -47,7 +47,7 @@ CAPTURING (when the user describes a conversation or pastes notes):
 4. Report concisely what you proposed, flag probable duplicates and blocking items (ambiguous names, new contacts), and mention the review link.
 5. apply_extraction ONLY after the user explicitly approves in chat ("looks good" = everything non-blocked; a subset = exactly that subset). Never apply unprompted.
 
-DUPLICATE CONTACTS: before creating anyone, search_contacts for their name — create_contact also hard-blocks likely duplicates and returns candidates; ask the user "same person?" and reuse the existing record unless they confirm it's someone new (then retry with force: true). find_duplicate_contacts scans for existing duplicate pairs on request.
+DUPLICATE CONTACTS: before creating anyone, search_contacts for their name — create_contact also hard-blocks likely duplicates and returns candidates; ask the user "same person?" and reuse the existing record unless they confirm it's someone new (then retry with force: true). find_duplicate_contacts scans for existing duplicate pairs on request. When a pair IS the same person, merge_contacts consolidates them — but only ever after the user confirms both that it's one person and which record to keep; a name match is never enough on its own. Never merge people who merely share a name. After merging, refresh_contact_summary for the survivor.
 
 SNAPSHOTS (Layer-3 cache — no approval needed): after any apply_extraction, immediately refresh_contact_summary for each contact in the result's touchedContacts. Also check list_stale_summaries when a conversation starts and refresh what's there. Summaries: 2-3 factual sentences, second person ("You met her at HBS in 2026..."), built from get_contact's memories/timeline/follow-ups — never invented.
 
@@ -386,10 +386,61 @@ export function registerCrmTools(
     {
       annotations: { title: "Find duplicate contacts", ...readOnly },
       description:
-        "Scan the workspace for contact pairs that look like the same person (similar or identical names). Present pairs to the user; merging records is a manual decision — never delete or merge contacts without explicit direction.",
+        "Scan the workspace for contact pairs that look like the same person (similar or identical names). Returns candidates only — matching is on name similarity, so some pairs will be different people. Always present the list and ask before merging anything.",
       inputSchema: {},
     },
-    async () => json(await repo.findDuplicateContactPairs()),
+    async () => {
+      const pairs = await repo.findDuplicateContactPairs();
+      return json({
+        pairs,
+        count: pairs.length,
+        next:
+          pairs.length === 0
+            ? "No duplicate candidates found — tell the user their contacts look clean."
+            : "These are CANDIDATES matched on name alone, not confirmed duplicates. List them for the user and ask which pairs (if any) are actually the same person, and which record they want to keep. Only call merge_contacts for the pairs they confirm — never merge the whole list, and never merge people who merely share a name.",
+      });
+    },
+  );
+
+  server.registerTool(
+    "merge_contacts",
+    {
+      annotations: {
+        title: "Merge duplicate contacts",
+        readOnlyHint: false,
+        // Repoints history and archives a record — clients should confirm.
+        destructiveHint: true,
+        openWorldHint: false,
+      },
+      description:
+        "Consolidate two records for the SAME person. Everything on loserContactId (memories, interactions, follow-ups, drafts) moves to survivorContactId, blank fields fill in, and the loser is archived with a pointer to the survivor. Nothing is deleted. ONLY call this after the user explicitly confirms these are one person and says which record to keep — never infer it from a name match alone.",
+      inputSchema: {
+        survivorContactId: z
+          .string()
+          .uuid()
+          .describe("The record to KEEP. Its existing values always win."),
+        loserContactId: z
+          .string()
+          .uuid()
+          .describe("The record to archive. Its data moves to the survivor."),
+      },
+    },
+    async ({ survivorContactId, loserContactId }) => {
+      try {
+        const summary = await repo.mergeContacts({
+          survivorId: survivorContactId,
+          loserId: loserContactId,
+          actorUserId,
+        });
+        return json({
+          merged: true,
+          ...summary,
+          note: "The surviving contact's AI snapshot is now stale — call refresh_contact_summary for it.",
+        });
+      } catch (err) {
+        return json({ error: (err as Error).message });
+      }
+    },
   );
 
   server.registerTool(

@@ -43,12 +43,56 @@ function contactFromForm(formData: FormData): NewContact {
 
 // ------------------------------------------------------------------- contacts
 
+/**
+ * The web form used to insert with no duplicate check at all, while the MCP
+ * path hard-blocked — so the AI was careful and the human form wasn't. Same
+ * gate now: surface the candidates and make the user confirm.
+ */
 export async function createContactAction(formData: FormData) {
   const { workspace } = await requireSession();
   const repo = repoFor(workspace.id);
-  const contact = await repo.createContact(contactFromForm(formData));
+  const fields = contactFromForm(formData);
+
+  if (formData.get("confirmedNew") !== "1") {
+    const similar = await repo.findSimilarContacts(
+      fields.firstName,
+      fields.lastName,
+    );
+    if (similar.length > 0) {
+      // Round-trip the typed values so nothing is retyped on the warning screen.
+      const params = new URLSearchParams();
+      for (const [k, v] of formData.entries()) {
+        if (typeof v === "string" && v.trim()) params.set(k, v);
+      }
+      params.set("dupes", similar.map((s) => s.id).join(","));
+      redirect(`/contacts/new?${params.toString()}`);
+    }
+  }
+
+  const contact = await repo.createContact(fields);
   revalidatePath("/");
   redirect(`/contacts/${contact.id}`);
+}
+
+// --------------------------------------------------------------------- merge
+
+export async function mergeContactsAction(
+  survivorId: string,
+  loserId: string,
+  formData: FormData,
+) {
+  const { user, workspace } = await requireSession();
+  // Typing the name is the confirmation: merging repoints history, and an
+  // accidental click here is expensive to unpick by hand.
+  if (formData.get("confirm") !== "MERGE") {
+    throw new Error('Type MERGE to confirm');
+  }
+  const repo = repoFor(workspace.id);
+  await repo.mergeContacts({ survivorId, loserId, actorUserId: user.id });
+  revalidatePath("/");
+  revalidatePath("/contacts");
+  revalidatePath(`/contacts/${survivorId}`);
+  redirect(`/contacts/${survivorId}?merged=1`);
 }
 
 export async function updateContactAction(

@@ -260,6 +260,10 @@ export const contacts = pgTable(
     aiSummaryGeneratedAt: timestamp("ai_summary_generated_at", {
       withTimezone: true,
     }),
+    // Merge tombstone (same pattern as tags.merged_into_tag_id): the losing
+    // record is soft-deleted, not destroyed, and still points at the survivor
+    // so old links resolve instead of 404ing.
+    mergedIntoContactId: uuid("merged_into_contact_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
