@@ -281,15 +281,72 @@ describe.skipIf(!hasDb)("message drafts (integration)", async () => {
     ).rejects.toThrow(/discarded/i);
   });
 
-  it("is idempotent per follow-up — a second create returns the draft in flight", async () => {
+  it("is idempotent per follow-up — a second create never forks a new draft", async () => {
     const { followUp, draft } = await newDraft("No forking");
     const second = await repoA.createDraft({
       contactId,
       followUpId: followUp.id,
-      channel: "text", // even with a different channel, the live draft wins
+      channel: "text",
     });
     expect(second.id).toBe(draft.id);
-    expect(second.channel).toBe("email");
+    // Unwritten, so a repeat call may still correct the channel.
+    expect(second.channel).toBe("text");
+  });
+
+  it("re-requesting a WRITTEN draft reopens it instead of freezing it", async () => {
+    // The reported bug: request_message_draft returned the written draft
+    // untouched, save_message_draft then refused it (only `requested` is
+    // writable), and there was no tool that could reset it. Dead end.
+    const { followUp, draft } = await newDraft("Redraft me");
+    await repoA.saveDraftBody(draft.id, { body: "First pass", subject: "v1" });
+    expect((await repoA.getDraft(draft.id))!.draft.status).toBe("drafted");
+
+    const reopened = await repoA.createDraft({
+      contactId,
+      followUpId: followUp.id,
+      channel: "email",
+      instruction: "mention the new notes",
+    });
+
+    expect(reopened.id).toBe(draft.id);
+    expect(reopened.status).toBe("requested");
+    expect(reopened.instruction).toBe("mention the new notes");
+    // And the write that used to be rejected now succeeds.
+    const saved = await repoA.saveDraftBody(draft.id, { body: "Second pass" });
+    expect(saved?.body).toBe("Second pass");
+  });
+
+  it("switching channel on a re-request carries through to the new draft", async () => {
+    const { followUp, draft } = await newDraft("Channel switch");
+    await repoA.saveDraftBody(draft.id, { body: "An email", subject: "s" });
+
+    const reopened = await repoA.createDraft({
+      contactId,
+      followUpId: followUp.id,
+      channel: "text",
+    });
+    expect(reopened.id).toBe(draft.id);
+    expect(reopened.channel).toBe("text");
+  });
+
+  it("refuses to replace a hand-edited draft unless forced", async () => {
+    const { followUp, draft } = await newDraft("Protect my edits");
+    await repoA.saveDraftBody(draft.id, { body: "AI wrote this" });
+    await repoA.updateDraftText(draft.id, { body: "I rewrote it myself" });
+
+    await expect(
+      repoA.createDraft({ contactId, followUpId: followUp.id, channel: "email" }),
+    ).rejects.toThrow(/edits the user made themselves/i);
+    // The user's text is untouched by the refusal.
+    expect((await repoA.getDraft(draft.id))!.draft.body).toBe("I rewrote it myself");
+
+    const forced = await repoA.createDraft({
+      contactId,
+      followUpId: followUp.id,
+      channel: "email",
+      force: true,
+    });
+    expect(forced.status).toBe("requested");
   });
 
   it("takes the contact from the follow-up, not the caller", async () => {
