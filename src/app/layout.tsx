@@ -22,6 +22,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   // Let users pinch-zoom; never lock scale on mobile.
   maximumScale: 5,
+  // Required for env(safe-area-inset-*) to resolve to anything but 0. Safari
+  // draws under the status bar whenever its chrome is hidden, so the app has
+  // to pad for the Dynamic Island itself.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

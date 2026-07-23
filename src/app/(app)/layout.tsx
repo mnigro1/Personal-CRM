@@ -18,9 +18,13 @@ export default async function AppLayout({
   const reviewCount = pending.length + proposed.length;
 
   return (
-    <div className="min-h-dvh">
+    // svh, not dvh: dvh grows when Safari hides its toolbars, which makes the
+    // page taller exactly as you scroll and keeps the chrome hidden. The
+    // inset padding keeps content clear of the Dynamic Island and home bar
+    // whenever Safari draws full-bleed.
+    <div className="min-h-svh pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
       <header className="border-b">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 p-4">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 p-4 pt-[calc(1rem+env(safe-area-inset-top))]">
           <nav className="flex max-w-full items-center gap-4 overflow-x-auto sm:gap-6">
             <span className="hidden cursor-default font-semibold select-none md:inline">
               Personal CRM
