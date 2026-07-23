@@ -5,7 +5,7 @@ import type { interactions, messageChannel, users } from "@/db/schema";
  * draft written under old rules is identifiable, same contract as
  * PROMPT_VERSION in src/lib/proposal.ts.
  */
-export const DRAFT_PROMPT_VERSION = "draft-v1";
+export const DRAFT_PROMPT_VERSION = "draft-v2";
 
 export type Channel = (typeof messageChannel.enumValues)[number];
 
@@ -46,7 +46,7 @@ export const CHANNEL_SPECS: Record<Channel, ChannelSpec> = {
     maxChars: 700,
     interactionType: "other",
     rules:
-      "One or two short paragraphs. A casual opener is fine. No sign-off, no subject line. Plain text — no @-mentions or channel refs.",
+      "One or two short paragraphs. A casual opener is fine. No sign-off, no subject line. Plain text, with no @-mentions or channel refs.",
   },
   teams: {
     label: "Teams",
@@ -135,22 +135,23 @@ CHANNEL: ${channelName}
 ${spec.rules}
 
 RULES:
-1. GROUND EVERY SPECIFIC. Reference exactly one concrete thing from the supplied memories — the sabbatical, the daughter's application, the thing they were nervous about. Specificity is the entire value here; a message that could have been sent to anyone is a failure even if it reads well.
+1. GROUND EVERY SPECIFIC. Reference exactly one concrete thing from the supplied memories (the sabbatical, the daughter's application, the thing they were nervous about). Specificity is the entire value here. A message that could have been sent to anyone is a failure even if it reads well.
 2. NEVER INVENT. No fact that is not in the context below. No invented mutual friends, no invented dates, no "hope the move went well" if no move is recorded.
 3. OWN THE ASK. If the follow-up is a deliverable, say what is coming and when. At most one clause of apology for delay, and only if it is genuinely late.
 4. OUTPUT THE MESSAGE ONLY. No preamble, no "Here's a draft:", no alternatives, no commentary. What you return is pasted as-is.
 5. STAY UNDER ${spec.maxChars} CHARACTERS. Length is where AI drafts give themselves away.
-6. USE THE USER'S VOICE below.${spec.hasSubject ? "\n7. RETURN A SUBJECT LINE as well as a body." : ""}
+6. NO EM DASHES. Never use the character "—". It is the clearest tell that a message was written by an AI, and the user does not write that way. Use a period and a new sentence, a comma, or parentheses instead. Also avoid the semicolon-heavy, perfectly balanced "not X, but Y" construction for the same reason. Short plain sentences read as human.
+7. USE THE USER'S VOICE below.${spec.hasSubject ? "\n8. RETURN A SUBJECT LINE as well as a body." : ""}
 
 VOICE: ${ctx.voice.voice?.trim() || "Natural, warm, direct. Contractions. No corporate filler, no “I hope this finds you well”."}
-SIGN-OFF: ${ctx.voice.signOff?.trim() || (spec.hasSubject ? "Use the user's first name." : "None — this channel takes no sign-off.")}
+SIGN-OFF: ${ctx.voice.signOff?.trim() || (spec.hasSubject ? "Use the user's first name." : "None. This channel takes no sign-off.")}
 EMOJI: ${ctx.voice.emoji ?? "never"}${
     ctx.instruction
       ? `\n\nTHE USER ASKED FOR A REVISION: ${ctx.instruction}\nApply this to the whole message, not just one sentence.`
       : ""
   }
 
-Call save_message_draft with the result. Do not send anything — the user sends it themselves.`;
+Call save_message_draft with the result. Do not send anything. The user sends it themselves.`;
 }
 
 /** Human-readable context block, shared by the MCP tool and the copy-prompt button. */
@@ -158,7 +159,7 @@ export function renderDraftContext(ctx: DraftContext): string {
   const lines: string[] = [];
   const c = ctx.contact;
 
-  lines.push(`WHO: ${c.name}${c.role || c.company ? ` — ${[c.role, c.company].filter(Boolean).join(" at ")}` : ""}`);
+  lines.push(`WHO: ${c.name}${c.role || c.company ? `, ${[c.role, c.company].filter(Boolean).join(" at ")}` : ""}`);
   if (c.location) lines.push(`WHERE: ${c.location}`);
   if (c.howWeMet) lines.push(`HOW WE MET: ${c.howWeMet}`);
   if (c.relationshipCategory) lines.push(`RELATIONSHIP: ${c.relationshipCategory}`);
@@ -175,7 +176,7 @@ export function renderDraftContext(ctx: DraftContext): string {
     lines.push(
       `LAST SPOKE: ${ctx.lastInteraction.date} (${ctx.lastInteraction.type})${
         ctx.daysSinceLastContact !== null
-          ? ` — ${ctx.daysSinceLastContact} days ago`
+          ? `, ${ctx.daysSinceLastContact} days ago`
           : ""
       }`,
     );
@@ -196,7 +197,7 @@ export function renderDraftContext(ctx: DraftContext): string {
   } else {
     lines.push("");
     lines.push(
-      "WHAT I KNOW ABOUT THEM: nothing recorded yet — keep the message short and do not invent specifics.",
+      "WHAT I KNOW ABOUT THEM: nothing recorded yet. Keep the message short and do not invent specifics.",
     );
   }
 

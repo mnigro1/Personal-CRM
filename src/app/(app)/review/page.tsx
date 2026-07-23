@@ -62,8 +62,9 @@ export default async function ReviewInboxPage() {
             {pending.length > 0 && <Badge variant="secondary">{pending.length}</Badge>}
           </CardTitle>
           <CardDescription>
-            Captured and safe. Your AI processes these into proposals
-            automatically next time you chat — or open one to do it now.
+            Captured and safe. Claude turns these into proposals next time you
+            chat, so they clear from here once it runs. Open one to read it or
+            fix its details.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">

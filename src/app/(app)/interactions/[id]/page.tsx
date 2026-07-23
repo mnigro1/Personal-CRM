@@ -9,9 +9,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-button";
+import { CopyPromptButton } from "@/components/draft-pending";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -32,10 +34,12 @@ export default async function InteractionPage({
     undone?: string;
     skipped?: string;
     rerun?: string;
+    saved?: string;
   }>;
 }) {
   const { id } = await params;
-  const { duplicate, applied, undone, skipped, rerun } = await searchParams;
+  const { duplicate, applied, undone, skipped, rerun, saved } =
+    await searchParams;
   const { workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const interaction = await repo.getInteraction(id);
@@ -74,7 +78,12 @@ export default async function InteractionPage({
       )}
       {rerun === "1" && (
         <div className="rounded-lg border p-3 text-sm text-muted-foreground">
-          Queued for re-extraction — ask Claude to process pending captures.
+          Queued for re-extraction. Ask Claude to process pending captures.
+        </div>
+      )}
+      {saved === "1" && (
+        <div className="rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100">
+          Details saved.
         </div>
       )}
 
@@ -123,6 +132,30 @@ export default async function InteractionPage({
           </form>
         </div>
       </div>
+
+      {/* "Awaiting extraction" clears only when the AI turns this into a
+          proposal. Without this card the Review inbox sent people here to a
+          page with no action that could possibly clear it. */}
+      {interaction.extractionStatus === "pending" && !proposedRun && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Waiting on your AI</CardTitle>
+            <CardDescription>
+              Your notes are saved. Extracting memories and follow-ups from
+              them is Claude&apos;s job, so this stays in Review until it runs.
+              Saving details below edits this record; it won&apos;t clear the
+              review.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <CopyPromptButton prompt="Process my pending captures in the Personal CRM." />
+            <p className="text-xs text-muted-foreground">
+              Ask Claude that in any session with the CRM connected. If it
+              can&apos;t see the CRM tools, restart the session so they load.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
