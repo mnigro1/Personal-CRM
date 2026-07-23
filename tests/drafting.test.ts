@@ -1,0 +1,88 @@
+/**
+ * The drafting prompt is the whole product on the drafting path, so its
+ * rules are worth asserting directly.
+ */
+import { describe, expect, it } from "vitest";
+import {
+  buildDraftInstructions,
+  renderDraftContext,
+  renderDraftPrompt,
+  CHANNEL_SPECS,
+  CHANNELS,
+  type DraftContext,
+} from "@/lib/drafting";
+
+const ctx = (over: Partial<DraftContext> = {}): DraftContext => ({
+  channel: "email",
+  channelLabel: null,
+  instruction: null,
+  contact: {
+    id: "c1",
+    name: "Dana Reyes",
+    role: "VP Product",
+    company: "Northwind",
+    location: "Boston",
+    howWeMet: "HBS admit weekend",
+    relationshipCategory: "Professional",
+  },
+  followUp: { description: "Send the deck", reason: "She asked after the demo", dueDate: "2026-08-01" },
+  otherOpenFollowUps: [],
+  memories: [
+    { id: "m1", text: "Taking a sabbatical in September", category: "career", eventDate: "2026-09-01" },
+  ],
+  lastInteraction: { date: "2026-06-01", type: "coffee", summary: "Talked about the fund" },
+  daysSinceLastContact: 40,
+  voice: {},
+  timezone: "America/New_York",
+  ...over,
+});
+
+describe("draft prompt", () => {
+  it("bans em dashes explicitly", () => {
+    const rules = buildDraftInstructions(ctx());
+    expect(rules).toMatch(/NO EM DASHES/);
+    expect(rules).toContain('"—"');
+  });
+
+  it("contains no em dashes itself, on any channel", () => {
+    // A prompt that models the habit it forbids teaches the wrong thing:
+    // the one allowed occurrence is the rule quoting the character.
+    for (const channel of CHANNELS) {
+      const text = renderDraftPrompt(ctx({ channel, channelLabel: "LinkedIn DM" }));
+      const withoutRule = text
+        .split("\n")
+        .filter((l) => !l.startsWith("6. NO EM DASHES"))
+        .join("\n");
+      expect(withoutRule, `em dash leaked into the ${channel} prompt`).not.toContain("—");
+    }
+  });
+
+  it("passes the ask, the reason and the memories through", () => {
+    const text = renderDraftContext(ctx());
+    expect(text).toContain("Send the deck");
+    expect(text).toContain("She asked after the demo");
+    expect(text).toContain("Taking a sabbatical in September");
+  });
+
+  it("tells the model not to invent when nothing is recorded", () => {
+    const text = renderDraftContext(ctx({ memories: [], lastInteraction: null, daysSinceLastContact: null }));
+    expect(text).toMatch(/do not invent specifics/i);
+    expect(text).toMatch(/no interactions logged yet/i);
+  });
+
+  it("asks for a subject only where the channel has one", () => {
+    expect(buildDraftInstructions(ctx({ channel: "email" }))).toMatch(/SUBJECT LINE/);
+    expect(buildDraftInstructions(ctx({ channel: "text" }))).not.toMatch(/SUBJECT LINE/);
+    expect(CHANNEL_SPECS.text.hasSubject).toBe(false);
+    expect(CHANNEL_SPECS.email.hasSubject).toBe(true);
+  });
+
+  it("carries a regeneration instruction into the rules", () => {
+    const rules = buildDraftInstructions(ctx({ instruction: "shorter, drop the apology" }));
+    expect(rules).toContain("shorter, drop the apology");
+  });
+
+  it("keeps the message-only rule, which the paste depends on", () => {
+    expect(buildDraftInstructions(ctx())).toMatch(/OUTPUT THE MESSAGE ONLY/);
+  });
+});

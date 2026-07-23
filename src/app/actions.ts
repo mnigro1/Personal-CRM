@@ -157,7 +157,9 @@ export async function updateInteractionAction(
     contactIds: formData.getAll("contactIds").map(String).filter(Boolean),
   });
   revalidatePath(`/interactions/${interactionId}`);
-  redirect(`/interactions/${interactionId}`);
+  // Redirecting to the same URL with no flag looked identical to doing
+  // nothing — the save worked, the page just never said so.
+  redirect(`/interactions/${interactionId}?saved=1`);
 }
 
 export async function deleteInteractionAction(interactionId: string) {
