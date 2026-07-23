@@ -53,7 +53,8 @@ SNAPSHOTS (Layer-3 cache — no approval needed): after any apply_extraction, im
 
 DRAFTING — WRITING A MESSAGE IN CHAT IS NOT DRAFTING. Any time the user asks you to draft, write, or compose a message, email, text, or Slack/Teams note for a contact or a follow-up, it MUST go through the drafting tools and land in the CRM. Prose in the chat window does not exist as far as the CRM is concerned: the user can't edit it there, the draft page stays empty, and the follow-up never closes. If you catch yourself about to type a message body into your reply, stop and call the tools instead.
 Two ways in:
-(a) The user asks for a draft ("draft the email for my pending follow-ups", "write Sarah a text"): list_follow_ups to find the follow-up, then request_message_draft (pick the channel from what the user said, or from what the contact has — email if you have their address, text if you have a phone; ask only if genuinely ambiguous), then get_draft_context → save_message_draft.
+(a) The user asks for a draft ("draft the email for my pending follow-ups", "write Sarah a text"): list_follow_ups to find the follow-up, then request_message_draft (pick the channel from what the user said, or from what the contact has: email if you have their address, text if you have a phone; ask only if genuinely ambiguous), then get_draft_context → save_message_draft.
+RE-DRAFTING an existing draft uses the SAME path: always call request_message_draft first, which reopens it for writing. Do not skip to save_message_draft, and do not fall back to writing the message in chat if a tool rejects you. list_pending_drafts only shows drafts awaiting text, so an empty list does not mean there is nothing to redraft.
 (b) The user requested it from the web UI: call list_pending_drafts at the start of any conversation and after any apply_extraction; for each, get_draft_context → save_message_draft.
 Either way: follow the instructions field from get_draft_context exactly. Body must be the message text ONLY, no preamble, no alternatives. Ground every draft in one concrete supplied memory and invent nothing. Drafts need no approval gate — nothing is sent, the message is inert until the user sends it themselves. Then report in one line and link /drafts/<id> so they can edit and send it.
 The CRM itself never sends anything. If the user has a separate mail or chat tool and asks you to send with it, that is their call — but afterwards come back and close the loop here (the draft's Done, or complete_follow_up), or the CRM will keep insisting they still owe this person.
@@ -632,7 +633,8 @@ export function registerCrmTools(
       if (!row) {
         return json({
           error:
-            "No draft is waiting on that id — it may have already been written, edited, or sent. Do not retry.",
+            "That draft is not open for writing. It has already been written, or it was sent or discarded.",
+          fix: "If you meant to re-write it, call request_message_draft for its follow-up first (that reopens it), then get_draft_context, then save_message_draft. Do not call save_message_draft again on its own.",
         });
       }
       return json({
@@ -648,30 +650,46 @@ export function registerCrmTools(
     {
       annotations: { title: "Request a message draft", ...safeWrite },
       description:
-        "Queue a new draft for a follow-up (the contact comes from the follow-up), then immediately write it with get_draft_context + save_message_draft. If a draft is already in flight for this follow-up, that one is returned instead of creating a second.",
+        "Queue a draft for a follow-up (the contact comes from the follow-up), then immediately write it with get_draft_context + save_message_draft. Call this FIRST whenever you want to write or re-write a message: if a draft already exists for this follow-up it is reopened for writing, so this is also how you redraft with new context or a different channel. Never creates a second draft for the same follow-up.",
       inputSchema: {
         followUpId: z.string().uuid(),
         channel: z.enum(["text", "slack", "teams", "email", "other"]),
         channelLabel: z
           .string()
           .optional()
-          .describe('Required when channel is "other" — e.g. "LinkedIn DM"'),
-        instruction: z.string().optional(),
+          .describe('Required when channel is "other", e.g. "LinkedIn DM"'),
+        instruction: z
+          .string()
+          .optional()
+          .describe(
+            'How this draft should differ, e.g. "shorter" or "mention the new notes"',
+          ),
+        force: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Set true ONLY after the user confirms it is fine to replace a draft they edited themselves",
+          ),
       },
     },
     async (args) => {
-      const draft = await repo.createDraft({
-        followUpId: args.followUpId,
-        channel: args.channel,
-        channelLabel: args.channelLabel ?? null,
-        instruction: args.instruction ?? null,
-        createdBy: "ai",
-      });
-      return json({
-        created: true,
-        draftId: draft.id,
-        next: "Now call get_draft_context with this draftId.",
-      });
+      try {
+        const draft = await repo.createDraft({
+          followUpId: args.followUpId,
+          channel: args.channel,
+          channelLabel: args.channelLabel ?? null,
+          instruction: args.instruction ?? null,
+          createdBy: "ai",
+          force: args.force,
+        });
+        return json({
+          ready: true,
+          draftId: draft.id,
+          next: "Now call get_draft_context with this draftId, then save_message_draft.",
+        });
+      } catch (err) {
+        return json({ blocked: true, reason: (err as Error).message });
+      }
     },
   );
 }

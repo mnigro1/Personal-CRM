@@ -80,6 +80,8 @@ export function draftOpsFor(workspaceId: string, base: BaseRepo) {
       channelLabel?: string | null;
       instruction?: string | null;
       createdBy?: "user" | "ai";
+      /** Confirms replacing a draft the user has edited by hand. */
+      force?: boolean;
     }) {
       let contactId = data.contactId;
 
@@ -104,8 +106,8 @@ export function draftOpsFor(workspaceId: string, base: BaseRepo) {
         // one person and a draft addressed to another.
         contactId = followUp.contactId;
 
-        // Idempotent per follow-up: a double-click or a repeated MCP call
-        // continues the draft already in flight instead of forking a second.
+        // One live draft per follow-up: a double-click or a repeated call
+        // continues the draft in flight instead of forking a second.
         const [existing] = await db
           .select()
           .from(messageDrafts)
@@ -118,7 +120,50 @@ export function draftOpsFor(workspaceId: string, base: BaseRepo) {
           )
           .orderBy(desc(messageDrafts.requestedAt))
           .limit(1);
-        if (existing) return existing;
+
+        if (existing) {
+          // Asking again for a draft that's already WRITTEN means "write it
+          // again" (new notes, different channel, a fresh angle). Returning
+          // it untouched froze it: saveDraftBody only accepts `requested`,
+          // so the caller could never write and had no way back.
+          if (existing.status === "drafted") {
+            const edited =
+              existing.aiBody !== null && existing.body !== existing.aiBody;
+            // Silently discarding the user's own rewrite is the worst thing
+            // this feature could do, so that case has to be confirmed.
+            if (edited && !data.force) {
+              throw new Error(
+                "That draft has edits the user made themselves, and re-drafting would replace them. Ask the user to confirm, then retry with force: true.",
+              );
+            }
+            const [reset] = await db
+              .update(messageDrafts)
+              .set({
+                status: "requested",
+                channel: data.channel,
+                channelLabel: data.channelLabel ?? null,
+                instruction: data.instruction?.trim() || null,
+                requestedAt: new Date(),
+                draftedAt: null,
+              })
+              .where(eq(messageDrafts.id, existing.id))
+              .returning();
+            return reset;
+          }
+
+          // Still `requested` and unwritten: nothing to lose, so let a
+          // repeat call correct the channel or add a steer.
+          const [updated] = await db
+            .update(messageDrafts)
+            .set({
+              channel: data.channel,
+              channelLabel: data.channelLabel ?? null,
+              instruction: data.instruction?.trim() || existing.instruction,
+            })
+            .where(eq(messageDrafts.id, existing.id))
+            .returning();
+          return updated;
+        }
       }
 
       if (!contactId) {
