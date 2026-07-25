@@ -296,8 +296,22 @@ export function repoFor(workspaceId: string) {
             wsContacts(),
             or(
               sql`similarity(${nameExpr}, ${full}) >= ${threshold}`,
-              // "Matt" vs "Matthew Weinstein": same first name still worth a look.
-              sql`lower(${contacts.firstName}) = lower(${firstName})`,
+              // Same first name is worth a look ONLY when a last name can't
+              // rule it out — otherwise every Daniel collides with every
+              // other Daniel and the user gets asked a question they, and
+              // the AI, already know the answer to. Two different last names
+              // are the strongest "different person" signal there is.
+              and(
+                sql`lower(${contacts.firstName}) = lower(${firstName})`,
+                or(
+                  // One side has no surname: genuinely can't tell them apart.
+                  sql`${lastName ?? ""} = ''`,
+                  sql`${contacts.lastName} is null or ${contacts.lastName} = ''`,
+                  // Both have one, so they must actually look alike
+                  // (catches "Soper" vs "Sopher", rejects "Soper" vs "Arnold").
+                  sql`similarity(lower(${contacts.lastName}), lower(${lastName ?? ""})) >= ${threshold}`,
+                ),
+              ),
             ),
           ),
         )

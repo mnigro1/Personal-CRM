@@ -178,8 +178,19 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
     expect(similar.map((s) => s.id)).toContain(original.id);
 
     // Same first name, no last name — the "Matt" vs "Matt Weinstein" case.
+    // Nothing can rule these apart, so it's still worth asking about.
     const firstNameOnly = await repoA.findSimilarContacts("Jonathan");
     expect(firstNameOnly.map((s) => s.id)).toContain(original.id);
+
+    // But a shared first name with a clearly different surname is a
+    // DIFFERENT PERSON. Flagging it forced the user to confirm something
+    // both they and the AI already knew ("Daniel Soper" vs "Daniel Arnold").
+    const differentSurname = await repoA.findSimilarContacts("Jonathan", "Kowalski");
+    expect(differentSurname.map((s) => s.id)).not.toContain(original.id);
+
+    // A misspelt surname is still caught — that's the case worth protecting.
+    const typo = await repoA.findSimilarContacts("Jonathan", "Smithfeld");
+    expect(typo.map((s) => s.id)).toContain(original.id);
 
     // Pair scan sees a duplicate once a second Jonathan exists.
     const dupe = await repoA.createContact({ firstName: "Jonathan", lastName: "Smithfield" });
