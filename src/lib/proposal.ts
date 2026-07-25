@@ -4,6 +4,19 @@ import {
   interactionType,
   memoryCategory,
 } from "@/db/schema";
+import { normalizeDate } from "@/lib/normalize";
+
+/**
+ * Every date the extractor sends lands in a Postgres `date` column, which
+ * rejects partial forms like "2023" outright and takes the whole apply down
+ * with it. Normalizing at the schema boundary means no downstream code has
+ * to remember, and an unparseable date drops to null instead of destroying
+ * the memory or follow-up it was attached to.
+ */
+const looseDate = z
+  .string()
+  .nullish()
+  .transform((v) => normalizeDate(v));
 
 /**
  * The extraction proposal contract (spec §5 Stage 3), produced by Claude via
@@ -60,7 +73,7 @@ export const proposalSchema = z.object({
         contact: contactRef,
         text: z.string().min(1),
         category: z.enum(memoryCategory.enumValues).default("other"),
-        event_date: z.string().nullish(),
+        event_date: looseDate,
         event_date_precision: z
           .enum(eventDatePrecision.enumValues)
           .default("none"),
@@ -90,7 +103,7 @@ export const proposalSchema = z.object({
         contact: contactRef,
         description: z.string().min(1),
         reason: z.string().min(1),
-        due_date: z.string().nullish(),
+        due_date: looseDate,
         priority: z.enum(["low", "medium", "high"]).default("medium"),
       }),
     )
@@ -161,7 +174,7 @@ export const selectionsSchema = z.object({
           z.object({
             text: z.string().min(1).optional(),
             category: z.enum(memoryCategory.enumValues).optional(),
-            event_date: z.string().nullish(),
+            event_date: looseDate,
           }),
         )
         .default({}),
@@ -170,7 +183,7 @@ export const selectionsSchema = z.object({
           z.string(),
           z.object({
             description: z.string().min(1).optional(),
-            due_date: z.string().nullish(),
+            due_date: looseDate,
           }),
         )
         .default({}),
