@@ -54,7 +54,9 @@ SNAPSHOTS (Layer-3 cache — no approval needed): after any apply_extraction, im
 DRAFTING — WRITING A MESSAGE IN CHAT IS NOT DRAFTING. Any time the user asks you to draft, write, or compose a message, email, text, or Slack/Teams note for a contact or a follow-up, it MUST go through the drafting tools and land in the CRM. Prose in the chat window does not exist as far as the CRM is concerned: the user can't edit it there, the draft page stays empty, and the follow-up never closes. If you catch yourself about to type a message body into your reply, stop and call the tools instead.
 Two ways in:
 (a) The user asks for a draft ("draft the email for my pending follow-ups", "write Sarah a text"): list_follow_ups to find the follow-up, then request_message_draft (pick the channel from what the user said, or from what the contact has: email if you have their address, text if you have a phone; ask only if genuinely ambiguous), then get_draft_context → save_message_draft.
-RE-DRAFTING an existing draft uses the SAME path: always call request_message_draft first, which reopens it for writing. Do not skip to save_message_draft, and do not fall back to writing the message in chat if a tool rejects you. list_pending_drafts only shows drafts awaiting text, so an empty list does not mean there is nothing to redraft.
+CHECK BEFORE YOU WRITE. list_follow_ups reports each follow-up's draft state, and get_draft_context returns currentBody for a draft that already exists. Read the existing draft before touching it. If it still fits, say so and leave it; a good draft the user has not complained about is not an invitation to rewrite. Only save_message_draft when the user asked for a change or the message is genuinely out of date.
+NEVER conclude that no draft exists because list_pending_drafts came back empty — it lists only drafts awaiting text, so written drafts are absent from it by design. That inference is wrong and leads to silently replacing the user's drafts. If you have not read currentBody for a specific draft, you do not know whether it is written; say so instead of asserting either way.
+RE-DRAFTING uses the SAME path: request_message_draft reopens the draft (its response carries previousBody), then get_draft_context, then save_message_draft. Do not skip to save_message_draft, and do not fall back to writing the message in chat if a tool rejects you.
 (b) The user requested it from the web UI: call list_pending_drafts at the start of any conversation and after any apply_extraction; for each, get_draft_context → save_message_draft.
 Either way: follow the instructions field from get_draft_context exactly. Body must be the message text ONLY, no preamble, no alternatives. Ground every draft in one concrete supplied memory and invent nothing. Drafts need no approval gate — nothing is sent, the message is inert until the user sends it themselves. Then report in one line and link /drafts/<id> so they can edit and send it.
 The CRM itself never sends anything. If the user has a separate mail or chat tool and asks you to send with it, that is their call — but afterwards come back and close the loop here (the draft's Done, or complete_follow_up), or the CRM will keep insisting they still owe this person.
@@ -509,10 +511,38 @@ export function registerCrmTools(
     "list_follow_ups",
     {
       annotations: { title: "List follow-ups", ...readOnly },
-      description: "List all open follow-ups in the workspace, with their contacts.",
+      description:
+        "List all open follow-ups in the workspace, with their contacts and the state of any message draft attached to each. Check `draft.written` here before offering to draft anything — a follow-up that already has a written draft does not need a new one.",
       inputSchema: {},
     },
-    async () => json(await repo.listOpenFollowUps()),
+    async () => {
+      const rows = await repo.listOpenFollowUps();
+      const drafts = await repo.activeDraftsByFollowUp(
+        rows.map((r) => r.followUp.id),
+      );
+      return json(
+        rows.map((r) => {
+          const d = drafts.get(r.followUp.id);
+          return {
+            ...r,
+            draft: d
+              ? {
+                  draftId: d.id,
+                  channel: d.channel,
+                  status: d.status,
+                  // The question every caller actually has. Status alone is
+                  // ambiguous: a reopened draft is `requested` but may still
+                  // hold text from a previous pass.
+                  written: !!d.body,
+                  note: d.body
+                    ? "A draft is already written. Read it with get_draft_context (it returns currentBody) before replacing it."
+                    : "Requested but not written yet. Write it with get_draft_context then save_message_draft.",
+                }
+              : null,
+          };
+        }),
+      );
+    },
   );
 
   server.registerTool(
@@ -559,7 +589,7 @@ export function registerCrmTools(
     {
       annotations: { title: "List pending drafts", ...readOnly },
       description:
-        "Message drafts the user has requested but that haven't been written yet. Check this at the start of a conversation and after any apply_extraction.",
+        "Drafts awaiting text: requested but never written. Check this at the start of a conversation and after any apply_extraction. NOT a census of drafts — written drafts are absent by design, so an empty result does NOT mean no drafts exist. To see what already exists, use list_follow_ups (each carries its draft state) or get_draft_context.",
       inputSchema: {},
     },
     async () => {
@@ -584,13 +614,34 @@ export function registerCrmTools(
     {
       annotations: { title: "Get draft context", ...readOnly },
       description:
-        "Everything needed to write one message draft: who they are, the ask, what's known about them, the last interaction, and the user's voice. Follow the returned `instructions` field exactly.",
+        "Everything needed to write one message draft: who they are, the ask, what's known about them, the user's voice, AND the current draft text if one has already been written. This is the read-only way to see whether a draft exists and what it says. Follow the returned `instructions` field exactly when writing.",
       inputSchema: { draftId: z.string().uuid() },
     },
     async ({ draftId }) => {
-      const ctx = await repo.buildDraftContext(draftId);
-      if (!ctx) return json({ error: "Draft not found" });
+      const [ctx, row] = await Promise.all([
+        repo.buildDraftContext(draftId),
+        repo.getDraft(draftId),
+      ]);
+      if (!ctx || !row) return json({ error: "Draft not found" });
+
+      // Deliberately separate from `context`: the existing text is for the
+      // caller to read and compare, not raw material to fold into the next
+      // draft. Blending it in would let a rewrite drift off the memories.
+      const written = !!row.draft.body;
       return json({
+        alreadyWritten: written,
+        currentBody: row.draft.body,
+        currentSubject: row.draft.subject,
+        status: row.draft.status,
+        lastWrittenAt: row.draft.draftedAt,
+        editedByUser:
+          row.draft.aiBody !== null && row.draft.body !== row.draft.aiBody,
+        ...(written
+          ? {
+              action:
+                "A draft already exists (see currentBody). Do NOT overwrite it reflexively: read it, and if it still fits, say so and leave it. Only call save_message_draft if the user asked for a change or the message is genuinely out of date.",
+            }
+          : {}),
         instructions: buildDraftInstructions(ctx),
         context: renderDraftContext(ctx),
         channel: ctx.channel,
@@ -682,10 +733,17 @@ export function registerCrmTools(
           createdBy: "ai",
           force: args.force,
         });
+        // Reopening preserves the previous text, so surface it. Silently
+        // resetting a written draft and then overwriting it is invisible
+        // data loss, and this call is the only place that can happen.
         return json({
           ready: true,
           draftId: draft.id,
-          next: "Now call get_draft_context with this draftId, then save_message_draft.",
+          reopenedExisting: !!draft.body,
+          previousBody: draft.body,
+          next: draft.body
+            ? "This follow-up ALREADY had a written draft (previousBody). It is now open for rewriting, but read it first: if it still fits, tell the user and leave it rather than replacing it."
+            : "Now call get_draft_context with this draftId, then save_message_draft.",
         });
       } catch (err) {
         return json({ blocked: true, reason: (err as Error).message });
