@@ -392,6 +392,40 @@ export async function revokeMcpTokenAction(tokenId: string) {
   revalidatePath("/settings");
 }
 
+/**
+ * The drafting voice profile. Lives on the user, never in code: each
+ * workspace has a different owner, so one person's voice must never become
+ * the default for someone else's drafts.
+ */
+export async function updateVoiceAction(formData: FormData) {
+  const { user } = await requireSession();
+  const emoji = str(formData, "emoji");
+  // Textareas submit CRLF per the HTML spec. Left alone, every stored
+  // profile carries stray \r into the prompt.
+  const text = (key: string) => str(formData, key)?.replace(/\r\n/g, "\n") ?? null;
+  const existing =
+    user.settingsJson && typeof user.settingsJson === "object"
+      ? (user.settingsJson as Record<string, unknown>)
+      : {};
+  await db
+    .update(users)
+    .set({
+      settingsJson: {
+        ...existing,
+        drafting: {
+          ...((existing.drafting as Record<string, unknown>) ?? {}),
+          voice: text("voice"),
+          signOff: text("signOff"),
+          emoji:
+            emoji === "sparingly" || emoji === "yes" ? emoji : "never",
+        },
+      },
+    })
+    .where(eq(users.id, user.id));
+  revalidatePath("/settings");
+  redirect("/settings?voiceSaved=1");
+}
+
 export async function updateTimezoneAction(formData: FormData) {
   const { user } = await requireSession();
   const timezone = str(formData, "timezone");
