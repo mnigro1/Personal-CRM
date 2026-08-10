@@ -311,6 +311,7 @@ function selectionsFromForm(formData: FormData) {
     already_known: indices("ak"),
     tags: indices("tag"),
     follow_ups: indices("fu"),
+    completed_follow_ups: indices("dfu"),
     contact_field_updates: indices("cfu"),
     edits: {
       new_memories: editRecord("nm", ["text", "category"]),

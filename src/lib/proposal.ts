@@ -108,6 +108,20 @@ export const proposalSchema = z.object({
       }),
     )
     .default([]),
+  // Closing the loop. When the source text IS the thing an open follow-up was
+  // waiting on — a pasted sent message, a screenshot of a reply, "I finally
+  // emailed her" — the follow-up is done, and leaving it open makes the Home
+  // view lie about what the user still owes.
+  completed_follow_ups: z
+    .array(
+      z.object({
+        follow_up_id: uuid,
+        // What in the source shows it happened. Forces the model to point at
+        // evidence instead of closing things that merely sound related.
+        evidence: z.string().min(1),
+      }),
+    )
+    .default([]),
   contact_field_updates: z
     .array(
       z.object({
@@ -165,6 +179,7 @@ export const selectionsSchema = z.object({
   supersessions: z.array(z.number().int().min(0)).default([]),
   already_known: z.array(z.number().int().min(0)).default([]),
   follow_ups: z.array(z.number().int().min(0)).default([]),
+  completed_follow_ups: z.array(z.number().int().min(0)).default([]),
   contact_field_updates: z.array(z.number().int().min(0)).default([]),
   edits: z
     .object({
@@ -208,6 +223,7 @@ export function selectAllDefaults(staged: StagedProposal): Selections {
     supersessions: p.supersessions.map((_, i) => i),
     already_known: p.already_known.map((_, i) => i),
     follow_ups: p.follow_ups.map((_, i) => i),
+    completed_follow_ups: p.completed_follow_ups.map((_, i) => i),
     contact_field_updates: p.contact_field_updates.map((_, i) => i),
   });
 }

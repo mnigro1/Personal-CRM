@@ -357,6 +357,28 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         if (found.length !== new Set(referencedMemoryIds).size)
           throw new Error("Proposal references a memory not in this workspace");
       }
+
+      // Same check for follow-ups the proposal wants to close. Apply is also
+      // workspace-scoped, but failing here gives a real error instead of
+      // silently dropping the item at apply time.
+      const referencedFollowUpIds = proposal.completed_follow_ups.map(
+        (c) => c.follow_up_id,
+      );
+      if (referencedFollowUpIds.length > 0) {
+        const found = await db
+          .select({ id: followUps.id })
+          .from(followUps)
+          .where(
+            and(
+              eq(followUps.workspaceId, workspaceId),
+              inArray(followUps.id, referencedFollowUpIds),
+            ),
+          );
+        if (found.length !== new Set(referencedFollowUpIds).size)
+          throw new Error(
+            "Proposal references a follow-up not in this workspace",
+          );
+      }
       const referencedContactIds = new Set<string>();
       for (const b of proposal.contact_bindings)
         if (b.contact_id) referencedContactIds.add(b.contact_id);
@@ -561,6 +583,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         memoriesSuperseded: 0,
         memoriesConfirmed: 0,
         followUpsAdded: 0,
+        followUpsCompleted: 0,
         fieldsUpdated: 0,
       };
 
@@ -817,6 +840,39 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
           });
         }
 
+        // Closing the loop: the source text IS what an open follow-up was
+        // waiting on. Scoped to the workspace and to still-open rows, so a
+        // stale proposal can't reach across workspaces or double-close.
+        for (const i of selections.completed_follow_ups) {
+          const c = proposal.completed_follow_ups[i];
+          if (!c) continue;
+          const [existing] = await tx
+            .select()
+            .from(followUps)
+            .where(
+              and(
+                eq(followUps.id, c.follow_up_id),
+                eq(followUps.workspaceId, workspaceId),
+                eq(followUps.status, "open"),
+              ),
+            );
+          if (!existing) continue;
+          await tx
+            .update(followUps)
+            .set({ status: "completed", completedAt: new Date() })
+            .where(eq(followUps.id, existing.id));
+          touchedContacts.add(existing.contactId);
+          counts.followUpsCompleted++;
+          // field + oldValue is what undo reads to put it back to open.
+          await rev({
+            entityType: "follow_up",
+            entityId: existing.id,
+            field: "status",
+            oldValue: existing.status,
+            newValue: "completed",
+          });
+        }
+
         // Contact field updates: diff applied, old value preserved as a
         // historical memory — never a deletion.
         for (const i of selections.contact_field_updates) {
@@ -1020,6 +1076,24 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         return false;
       }
       case "follow_up": {
+        // Reopen a follow-up that the apply closed. Without this, undoing a
+        // batch would leave the follow-up shut and the user still owing the
+        // thing, with no sign of it on Home.
+        if (r.field === "status") {
+          const [row] = await tx
+            .select({ contactId: followUps.contactId, status: followUps.status })
+            .from(followUps)
+            .where(eq(followUps.id, r.entityId));
+          if (!row) return false;
+          // Someone may have reopened or re-closed it since; don't fight them.
+          if (row.status !== "completed") return false;
+          await tx
+            .update(followUps)
+            .set({ status: "open", completedAt: null })
+            .where(eq(followUps.id, r.entityId));
+          touchedContacts.add(row.contactId);
+          return true;
+        }
         if (!isInsert) return false;
         const [row] = await tx
           .select({ contactId: followUps.contactId })

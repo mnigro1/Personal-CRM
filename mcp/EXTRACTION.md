@@ -51,6 +51,10 @@ stage a proposal via `submit_extraction_proposal`.
       "reason": "He lands in Denver in September and suggested reconnecting",
       "due_date": "2026-10-01", "priority": "medium" }
   ],
+  "completed_follow_ups": [     // an OPEN follow-up this interaction satisfies
+    { "follow_up_id": "<uuid from openFollowUps in the context>",
+      "evidence": "The pasted message is the update he promised in February" }
+  ],
   "contact_field_updates": [    // proposed as diffs, never applied silently
     { "contact_id": "<uuid>", "field": "current_company",   // current_company|current_role|location|phone|linkedin_url|website
       "old_value": "Bain", "new_value": "Stealth Startup" }

@@ -47,6 +47,10 @@ export default async function ReviewScreen({
   const staged = extraction.proposalJson as StagedProposal;
   const p = staged.proposal;
   const roster = await repo.listContacts();
+  // Proposals carry only follow-up ids, so resolve them for display.
+  const openFollowUpById = new Map(
+    (await repo.listOpenFollowUps()).map((r) => [r.followUp.id, r.followUp]),
+  );
   const knownMemories = await repo.getMemoriesByIds(
     p.already_known.map((a) => a.existing_memory_id),
   );
@@ -240,6 +244,37 @@ export default async function ReviewScreen({
                   </div>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {p.completed_follow_ups.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Close out</CardTitle>
+              <CardDescription>
+                These open follow-ups look like they were done in this
+                interaction. Approving marks them complete. Undo reopens them.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {p.completed_follow_ups.map((c, i) => {
+                const f = openFollowUpById.get(c.follow_up_id);
+                return (
+                  <label key={i} className="flex items-start gap-2 text-sm">
+                    {checkbox(`dfu-${i}`, true)}
+                    <span className="min-w-0">
+                      <span className="font-medium">
+                        {f ? f.description : "This follow-up is no longer open"}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {f ? `${nameOf(f.contactId)} · ` : ""}why it&apos;s done:{" "}
+                        {c.evidence}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
             </CardContent>
           </Card>
         )}
