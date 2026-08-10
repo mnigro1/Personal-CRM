@@ -7,6 +7,18 @@ import type { interactions, messageChannel, users } from "@/db/schema";
  */
 export const DRAFT_PROMPT_VERSION = "draft-v2";
 
+/**
+ * Used only when a user has not written their own profile in Settings.
+ * Deliberately generic: every workspace has a different owner, so a specific
+ * person's voice must never be the fallback for someone else's drafts.
+ */
+export const DEFAULT_VOICE_PROFILE = `No profile has been written yet, so aim for plain and human rather than any particular person.
+- Short paragraphs, one or two sentences each, with a blank line between them.
+- Contractions. Plain words over impressive ones.
+- No corporate filler: no "I hope this email finds you well", "reaching out", "circling back", "touching base", "per my last".
+- Own the delay plainly if the message is late; one clause, no grovelling.
+- Close by inviting a reply, not by assigning homework.`;
+
 export type Channel = (typeof messageChannel.enumValues)[number];
 
 export const CHANNELS = [
@@ -141,11 +153,16 @@ RULES:
 4. OUTPUT THE MESSAGE ONLY. No preamble, no "Here's a draft:", no alternatives, no commentary. What you return is pasted as-is.
 5. STAY UNDER ${spec.maxChars} CHARACTERS. Length is where AI drafts give themselves away.
 6. NO EM DASHES. Never use the character "—". It is the clearest tell that a message was written by an AI, and the user does not write that way. Use a period and a new sentence, a comma, or parentheses instead. Also avoid the semicolon-heavy, perfectly balanced "not X, but Y" construction for the same reason. Short plain sentences read as human.
-7. USE THE USER'S VOICE below.${spec.hasSubject ? "\n8. RETURN A SUBJECT LINE as well as a body." : ""}
+7. SOUND LIKE THE PERSON SENDING IT. The voice profile below is the most important instruction here after the factual ones. A draft that is accurate but sounds like a generic assistant has failed, because they will rewrite it before sending.${spec.hasSubject ? "\n8. RETURN A SUBJECT LINE as well as a body." : ""}
 
-VOICE: ${ctx.voice.voice?.trim() || "Natural, warm, direct. Contractions. No corporate filler, no “I hope this finds you well”."}
+HOW THIS PERSON WRITES. Match this closely, it is the whole point:
+${ctx.voice.voice?.trim() || DEFAULT_VOICE_PROFILE}
+
 SIGN-OFF: ${ctx.voice.signOff?.trim() || (spec.hasSubject ? "Use the user's first name." : "None. This channel takes no sign-off.")}
-EMOJI: ${ctx.voice.emoji ?? "never"}${
+EMOJI: ${ctx.voice.emoji ?? "never"}
+
+The voice profile outranks every stylistic rule above it. If it says something that contradicts a rule here, follow the profile. It does NOT outrank the factual rules: never invent, and stay grounded in the supplied memories regardless.
+Do not imitate the voice by stuffing in its example phrases. Those describe habits, not a script. A message that uses three of the listed tics in four sentences reads as parody, not as the person.${
     ctx.instruction
       ? `\n\nTHE USER ASKED FOR A REVISION: ${ctx.instruction}\nApply this to the whole message, not just one sentence.`
       : ""

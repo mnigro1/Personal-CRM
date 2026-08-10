@@ -5,7 +5,6 @@
       "name": "personal-crm",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/matt/Documents/Personal/Personal CRM/Personal-CRM",
       "port": 3000
     }
   ]

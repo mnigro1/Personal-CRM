@@ -4,6 +4,7 @@ import {
   createMcpTokenAction,
   revokeMcpTokenAction,
   updateTimezoneAction,
+  updateVoiceAction,
 } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,19 +16,22 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { repoFor } from "@/db/repo";
 import { listMcpTokens } from "@/db/tokens";
+import { voiceFor } from "@/lib/drafting";
 import { requireSession } from "@/lib/session";
 
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ newToken?: string }>;
+  searchParams: Promise<{ newToken?: string; voiceSaved?: string }>;
 }) {
-  const { newToken } = await searchParams;
+  const { newToken, voiceSaved } = await searchParams;
   const { user, workspace } = await requireSession();
   const inviteRows = await repoFor(workspace.id).listInvites(user.id);
   const tokens = await listMcpTokens(user.id);
+  const voice = voiceFor(user);
   const h = await headers();
   const origin =
     process.env.APP_URL ??
@@ -87,6 +91,65 @@ export default async function SettingsPage({
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Your writing voice</CardTitle>
+          <CardDescription>
+            Every message draft is written against this. Describe how you
+            actually write, in as much detail as you like: how you open, how
+            you close, the words you reach for, what you never say. Specific
+            beats tidy, and quoting your own habits works better than
+            adjectives.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {voiceSaved === "1" && (
+            <p className="mb-3 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100">
+              Voice saved. New drafts will use it.
+            </p>
+          )}
+          <form action={updateVoiceAction} className="space-y-4">
+            <div className="space-y-1">
+              <Label htmlFor="voice">How you write</Label>
+              <Textarea
+                id="voice"
+                name="voice"
+                rows={16}
+                defaultValue={voice.voice ?? ""}
+                placeholder="Short paragraphs. Contractions. I open with Hey for people I know…"
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="signOff">Sign-off</Label>
+                <Input
+                  id="signOff"
+                  name="signOff"
+                  defaultValue={voice.signOff ?? ""}
+                  placeholder="-Matt"
+                  className="w-72"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="emoji">Emoji</Label>
+                <select
+                  id="emoji"
+                  name="emoji"
+                  defaultValue={voice.emoji ?? "never"}
+                  className="rounded border px-2 py-2 text-sm"
+                >
+                  <option value="never">never</option>
+                  <option value="sparingly">sparingly</option>
+                  <option value="yes">yes</option>
+                </select>
+              </div>
+              <Button type="submit" size="sm">Save voice</Button>
+            </div>
+          </form>
         </CardContent>
       </Card>
 

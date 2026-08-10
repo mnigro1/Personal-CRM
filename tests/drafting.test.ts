@@ -9,6 +9,7 @@ import {
   renderDraftPrompt,
   CHANNEL_SPECS,
   CHANNELS,
+  DEFAULT_VOICE_PROFILE,
   type DraftContext,
 } from "@/lib/drafting";
 
@@ -84,5 +85,35 @@ describe("draft prompt", () => {
 
   it("keeps the message-only rule, which the paste depends on", () => {
     expect(buildDraftInstructions(ctx())).toMatch(/OUTPUT THE MESSAGE ONLY/);
+  });
+});
+
+describe("voice profile", () => {
+  it("passes the user's profile through verbatim", () => {
+    const profile =
+      "Opens with Hey. Never says circling back. Signs off with just the first name.";
+    const rules = buildDraftInstructions(
+      ctx({ voice: { voice: profile, signOff: "-Matt", emoji: "never" } }),
+    );
+    expect(rules).toContain(profile);
+    expect(rules).toContain("-Matt");
+    expect(rules).toMatch(/HOW THIS PERSON WRITES/);
+  });
+
+  it("lets the profile outrank style rules but never the factual ones", () => {
+    const rules = buildDraftInstructions(ctx({ voice: { voice: "All lowercase." } }));
+    expect(rules).toMatch(/profile outranks every stylistic rule/i);
+    expect(rules).toMatch(/does NOT outrank the factual rules/i);
+    // Guards against imitation-by-phrase-stuffing, which reads as parody.
+    expect(rules).toMatch(/not a script/i);
+  });
+
+  it("falls back to a generic profile, never to a specific person", () => {
+    const rules = buildDraftInstructions(ctx({ voice: {} }));
+    expect(rules).toContain(DEFAULT_VOICE_PROFILE);
+    // Each workspace has a different owner. Hardcoding one person's voice as
+    // the default would put their words in someone else's drafts.
+    expect(DEFAULT_VOICE_PROFILE).not.toMatch(/matt/i);
+    expect(DEFAULT_VOICE_PROFILE).not.toContain("—");
   });
 });
