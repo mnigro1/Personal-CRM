@@ -24,7 +24,7 @@ import {
   invites,
   memories,
 } from "@/db/schema";
-import { normalizeTagName, sourceHash } from "@/lib/normalize";
+import { normalizeDate, normalizeTagName, sourceHash } from "@/lib/normalize";
 import { revisions } from "@/db/schema";
 import { extractionOpsFor } from "@/db/repo-extraction";
 import { draftOpsFor } from "@/db/repo-drafts";
@@ -792,6 +792,91 @@ export function repoFor(workspaceId: string) {
         })
         .returning();
       return row;
+    },
+
+    /**
+     * Edit an existing follow-up in place.
+     *
+     * Without this a follow-up was write-once: the only exits were complete
+     * or dismiss, so correcting a due date meant completing the row and
+     * recreating it — which orphans any draft attached to the old id.
+     *
+     * Setting status back to "open" is the inverse of completeFollowUp, so a
+     * follow-up closed by mistake can be recovered.
+     */
+    async updateFollowUp(
+      followUpId: string,
+      data: {
+        description?: string;
+        reason?: string;
+        // undefined = leave alone; null = clear the date.
+        dueDate?: string | null;
+        priority?: (typeof followUps.$inferInsert)["priority"];
+        status?: (typeof followUps.$inferInsert)["status"];
+      },
+      actorUserId?: string,
+    ) {
+      const [existing] = await db
+        .select()
+        .from(followUps)
+        .where(
+          and(
+            eq(followUps.id, followUpId),
+            eq(followUps.workspaceId, workspaceId),
+          ),
+        );
+      if (!existing) return null;
+
+      const patch: Partial<typeof followUps.$inferInsert> = {};
+      const changes: { field: string; oldValue: unknown; newValue: unknown }[] =
+        [];
+      const track = (field: string, oldValue: unknown, newValue: unknown) => {
+        if (oldValue === newValue) return;
+        (patch as Record<string, unknown>)[field] = newValue;
+        changes.push({ field, oldValue, newValue });
+      };
+
+      if (data.description !== undefined)
+        track("description", existing.description, data.description);
+      if (data.reason !== undefined)
+        track("reason", existing.reason, data.reason);
+      if (data.dueDate !== undefined) {
+        // Same normalizer the extraction pipeline uses, so "2026" or
+        // "2026-09" can't reach a date column and fail the write.
+        track("dueDate", existing.dueDate, normalizeDate(data.dueDate));
+      }
+      if (data.priority !== undefined)
+        track("priority", existing.priority, data.priority);
+      if (data.status !== undefined && data.status !== existing.status) {
+        track("status", existing.status, data.status);
+        // completedAt has to follow status or the row contradicts itself.
+        patch.completedAt = data.status === "completed" ? new Date() : null;
+      }
+
+      if (changes.length === 0) return existing;
+
+      const [row] = await db
+        .update(followUps)
+        .set(patch)
+        .where(
+          and(
+            eq(followUps.id, followUpId),
+            eq(followUps.workspaceId, workspaceId),
+          ),
+        )
+        .returning();
+
+      for (const c of changes) {
+        await logUserRevision({
+          entityType: "follow_up",
+          entityId: followUpId,
+          field: c.field,
+          oldValue: c.oldValue,
+          newValue: c.newValue,
+          actorUserId,
+        });
+      }
+      return row ?? null;
     },
 
     async completeFollowUp(followUpId: string) {

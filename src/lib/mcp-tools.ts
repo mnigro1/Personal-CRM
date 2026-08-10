@@ -61,7 +61,7 @@ RE-DRAFTING uses the SAME path: request_message_draft reopens the draft (its res
 Either way: follow the instructions field from get_draft_context exactly. Body must be the message text ONLY, no preamble, no alternatives. Ground every draft in one concrete supplied memory and invent nothing. Drafts need no approval gate — nothing is sent, the message is inert until the user sends it themselves. Then report in one line and link /drafts/<id> so they can edit and send it.
 The CRM itself never sends anything. If the user has a separate mail or chat tool and asks you to send with it, that is their call — but afterwards come back and close the loop here (the draft's Done, or complete_follow_up), or the CRM will keep insisting they still owe this person.
 
-HARD RULES: Never guess between two similar people — propose ambiguous bindings with hints. People merely mentioned (a spouse, a colleague) become memories on the present contact, not new contacts, unless the user clearly has their own relationship with them. New contacts are never created silently. Known facts go to already_known, not new_memories. Contradictions = supersession (history preserved). Every follow-up needs a reason. undo_extraction_batch exists — offer it if something applied was wrong.
+HARD RULES: Never guess between two similar people — propose ambiguous bindings with hints. People merely mentioned (a spouse, a colleague) become memories on the present contact, not new contacts, unless the user clearly has their own relationship with them. New contacts are never created silently. Known facts go to already_known, not new_memories. Contradictions = supersession (history preserved). Every follow-up needs a reason. Follow-ups are editable: use update_follow_up to reschedule a due date or fix any field, and never complete-and-recreate one to change a field, because the new row abandons the draft attached to the old one. update_follow_up with status "open" also reopens anything closed by mistake. undo_extraction_batch exists — offer it if something applied was wrong.
 
 RETRIEVAL: "who do I know in X" = search_contacts free text. "prep me for X" = get_contact, then: who they are, how you know them, last interaction, key memories, open loops, 2-3 things worth asking (especially upcoming event_dates). "losing touch" = search_contacts with lastInteractionBefore ~3 months back, ranked with reasons. Confirm actions in one or two lines, quote proposed memory texts, and never invent memories from contentless notes.`;
 }
@@ -574,6 +574,46 @@ export function registerCrmTools(
     async ({ followUpId }) => {
       const followUp = await repo.completeFollowUp(followUpId);
       return json(followUp ? { completed: true } : { error: "Not found" });
+    },
+  );
+
+  server.registerTool(
+    "update_follow_up",
+    {
+      annotations: { title: "Update follow-up", ...safeWrite },
+      description:
+        "Edit an existing follow-up in place: change its due date, description, reason, priority, or status. Use this to reschedule — never complete and recreate a follow-up just to change a field, because that abandons any message draft attached to it. Setting status to 'open' reopens one that was completed or dismissed by mistake. Only the fields you pass are changed.",
+      inputSchema: {
+        followUpId: z.string().uuid(),
+        description: z.string().optional(),
+        reason: z.string().optional(),
+        dueDate: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            "YYYY-MM-DD, or null to clear the due date. Resolve relative dates ('next Friday') against the user's timezone first.",
+          ),
+        priority: z.enum(["low", "medium", "high"]).optional(),
+        status: z
+          .enum(["open", "completed", "dismissed"])
+          .optional()
+          .describe("'open' reopens a follow-up closed by mistake"),
+      },
+    },
+    async ({ followUpId, ...fields }) => {
+      const row = await repo.updateFollowUp(followUpId, fields, actorUserId);
+      if (!row) return json({ error: "Follow-up not found" });
+      return json({
+        updated: true,
+        followUp: {
+          id: row.id,
+          description: row.description,
+          dueDate: row.dueDate,
+          priority: row.priority,
+          status: row.status,
+        },
+      });
     },
   );
 
