@@ -57,9 +57,12 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
   afterAll(async () => {
     for (const wsId of [wsAId, wsBId]) {
       if (!wsId) continue;
-      const { revisions, extractions } = await import("@/db/schema");
+      const { revisions, extractions, messageDrafts } = await import(
+        "@/db/schema"
+      );
       await db.delete(revisions).where(eq(revisions.workspaceId, wsId));
       await db.delete(extractions).where(eq(extractions.workspaceId, wsId));
+      await db.delete(messageDrafts).where(eq(messageDrafts.workspaceId, wsId));
       await db.delete(contactTags).where(eq(contactTags.workspaceId, wsId));
       await db.delete(followUps).where(eq(followUps.workspaceId, wsId));
       await db.delete(memories).where(eq(memories.workspaceId, wsId));
@@ -247,5 +250,119 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
 
     const withFollowUps = await repoA.listContacts({ hasOpenFollowUps: true, q: "Filter" });
     expect(withFollowUps.map((c) => c.firstName)).toEqual(["FilterDenver"]);
+  });
+
+  // Follow-ups used to be write-once: no way to edit one, so rescheduling
+  // meant completing and recreating, which abandons the attached draft.
+  describe("updateFollowUp", () => {
+    const makeFollowUp = async (over: Record<string, unknown> = {}) => {
+      const contact = await repoA.createContact({ firstName: "Reschedule" });
+      const followUp = await repoA.addFollowUp({
+        contactId: contact.id,
+        description: "Send the deck",
+        reason: "she asked",
+        dueDate: "2026-09-14",
+        priority: "medium",
+        ...over,
+      });
+      return { contact, followUp };
+    };
+
+    it("reschedules in place, keeping the draft attached", async () => {
+      const { contact, followUp } = await makeFollowUp();
+      const draft = await repoA.createDraft({
+        contactId: contact.id,
+        followUpId: followUp.id,
+        channel: "email",
+      });
+      await repoA.saveDraftBody(draft.id, { body: "Written already" });
+
+      const updated = await repoA.updateFollowUp(followUp.id, {
+        dueDate: "2026-08-14",
+      });
+
+      expect(updated!.id).toBe(followUp.id);
+      expect(updated!.dueDate).toBe("2026-08-14");
+      // The whole point: same row, so the draft is still reachable.
+      const still = await repoA.getDraft(draft.id);
+      expect(still!.draft.followUpId).toBe(followUp.id);
+      expect(still!.draft.body).toBe("Written already");
+    });
+
+    it("touches only the fields passed", async () => {
+      const { followUp } = await makeFollowUp();
+      const updated = await repoA.updateFollowUp(followUp.id, {
+        priority: "high",
+      });
+      expect(updated!.priority).toBe("high");
+      expect(updated!.dueDate).toBe("2026-09-14");
+      expect(updated!.description).toBe("Send the deck");
+      expect(updated!.reason).toBe("she asked");
+    });
+
+    it("normalizes a partial due date and can clear it", async () => {
+      const { followUp } = await makeFollowUp();
+      const partial = await repoA.updateFollowUp(followUp.id, {
+        dueDate: "2026-09",
+      });
+      expect(partial!.dueDate).toBe("2026-09-01");
+
+      const cleared = await repoA.updateFollowUp(followUp.id, {
+        dueDate: null,
+      });
+      expect(cleared!.dueDate).toBeNull();
+    });
+
+    it("reopens a follow-up closed by mistake", async () => {
+      const { followUp } = await makeFollowUp();
+      await repoA.completeFollowUp(followUp.id);
+
+      const reopened = await repoA.updateFollowUp(followUp.id, {
+        status: "open",
+      });
+      expect(reopened!.status).toBe("open");
+      // completedAt must follow status or the row contradicts itself.
+      expect(reopened!.completedAt).toBeNull();
+      const open = await repoA.listOpenFollowUps();
+      expect(open.map((r) => r.followUp.id)).toContain(followUp.id);
+    });
+
+    it("records each change so a reschedule is auditable", async () => {
+      const { revisions } = await import("@/db/schema");
+      const { followUp } = await makeFollowUp();
+      await repoA.updateFollowUp(
+        followUp.id,
+        { dueDate: "2026-08-14", priority: "high" },
+        userAId,
+      );
+
+      const rows = await db
+        .select()
+        .from(revisions)
+        .where(eq(revisions.entityId, followUp.id));
+      const byField = Object.fromEntries(rows.map((r) => [r.field, r]));
+      expect(byField.due_date.oldValue).toBe("2026-09-14");
+      expect(byField.due_date.newValue).toBe("2026-08-14");
+      expect(byField.priority.newValue).toBe("high");
+    });
+
+    it("is workspace-scoped and returns null for anything else", async () => {
+      const { followUp } = await makeFollowUp();
+      expect(
+        await repoB.updateFollowUp(followUp.id, { dueDate: "2026-01-01" }),
+      ).toBeNull();
+      expect(
+        await repoA.updateFollowUp(
+          "00000000-0000-0000-0000-000000000000",
+          { priority: "low" },
+        ),
+      ).toBeNull();
+      // Untouched by the rejected write.
+      const [row] = await db
+        .select()
+        .from(followUps)
+        .where(eq(followUps.id, followUp.id));
+      expect(row.dueDate).toBe("2026-09-14");
+    });
   });
 });
