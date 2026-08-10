@@ -9,7 +9,8 @@ const hasDb = !!process.env.DATABASE_URL;
 
 describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
   const { db } = await import("@/db");
-  const { contacts, mcpTokens, users, workspaces } = await import("@/db/schema");
+  const { contacts, followUps, mcpTokens, messageDrafts, users, workspaces } =
+    await import("@/db/schema");
   const { repoFor } = await import("@/db/repo");
   const { createMcpToken, revokeMcpToken, listMcpTokens } = await import("@/db/tokens");
   const { POST } = await import("@/app/api/mcp/[token]/route");
@@ -74,6 +75,8 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
 
   afterAll(async () => {
     for (const ws of [wsAId, wsBId]) {
+      await db.delete(messageDrafts).where(eq(messageDrafts.workspaceId, ws));
+      await db.delete(followUps).where(eq(followUps.workspaceId, ws));
       await db.delete(contacts).where(eq(contacts.workspaceId, ws));
       await db.delete(workspaces).where(eq(workspaces.id, ws));
     }
@@ -180,6 +183,67 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     }, 9);
     const created = JSON.parse(forced.body.result.content[0].text);
     expect(created.created).toBe(true);
+  });
+
+  it("a WRITTEN draft is visible to the AI, not just an empty pending list", async () => {
+    // The failure this guards: an agent called list_pending_drafts, saw [],
+    // concluded no drafts existed, and rewrote drafts the user already had.
+    // A written draft is absent from that list BY DESIGN, so every other
+    // read path has to make its existence obvious.
+    const repo = repoFor(wsAId);
+    const contact = await repo.createContact({ firstName: "DraftSubject" });
+    const followUp = await repo.addFollowUp({
+      contactId: contact.id,
+      description: "Send the thing",
+      reason: "they asked",
+    });
+    const draft = await repo.createDraft({
+      contactId: contact.id,
+      followUpId: followUp.id,
+      channel: "email",
+    });
+    await repo.saveDraftBody(draft.id, {
+      body: "Existing text the user already has.",
+      subject: "Existing subject",
+    });
+
+    // The misleading signal, asserted so nobody "fixes" it by accident.
+    const pending = await rpc(tokenA, "tools/call", {
+      name: "list_pending_drafts",
+      arguments: {},
+    }, 20);
+    expect(JSON.parse(pending.body.result.content[0].text)).toHaveLength(0);
+
+    // list_follow_ups must show the draft exists and is written.
+    const list = await rpc(tokenA, "tools/call", {
+      name: "list_follow_ups",
+      arguments: {},
+    }, 21);
+    const row = JSON.parse(list.body.result.content[0].text).find(
+      (r: { followUp: { id: string } }) => r.followUp.id === followUp.id,
+    );
+    expect(row.draft).not.toBeNull();
+    expect(row.draft.written).toBe(true);
+
+    // get_draft_context must hand back the actual text to read.
+    const ctx = await rpc(tokenA, "tools/call", {
+      name: "get_draft_context",
+      arguments: { draftId: draft.id },
+    }, 22);
+    const payload = JSON.parse(ctx.body.result.content[0].text);
+    expect(payload.alreadyWritten).toBe(true);
+    expect(payload.currentBody).toBe("Existing text the user already has.");
+    expect(payload.currentSubject).toBe("Existing subject");
+    expect(payload.action).toMatch(/do not overwrite it reflexively/i);
+
+    // Reopening must report what it is about to replace.
+    const reopen = await rpc(tokenA, "tools/call", {
+      name: "request_message_draft",
+      arguments: { followUpId: followUp.id, channel: "email" },
+    }, 23);
+    const reopened = JSON.parse(reopen.body.result.content[0].text);
+    expect(reopened.reopenedExisting).toBe(true);
+    expect(reopened.previousBody).toBe("Existing text the user already has.");
   });
 
   it("revoked tokens stop working immediately", async () => {
