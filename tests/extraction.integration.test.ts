@@ -235,6 +235,100 @@ describe.skipIf(!hasDb)("extraction pipeline (integration)", async () => {
     expect(reopened!.extraction.status).toBe("proposed");
   });
 
+  it("closes an open follow-up the interaction satisfies, and undo reopens it", async () => {
+    // The reported gap: pasting a message you already sent left the follow-up
+    // open, so Home kept claiming you still owed it.
+    const dana = await repo.createContact({ firstName: "Closeout", lastName: "Dana" });
+    const followUp = await repo.addFollowUp({
+      contactId: dana.id,
+      description: "Send Dana the promised update",
+      reason: "Promised it in February",
+    });
+    const interaction = await mkInteraction(
+      `Pasted the message I sent Dana ${run}`,
+      [dana.id],
+    );
+
+    const { extraction } = await repo.saveProposal(
+      interaction.id,
+      {
+        contact_bindings: [
+          { mention: "Dana", status: "confident", contact_id: dana.id, confidence: 0.99 },
+        ],
+        completed_follow_ups: [
+          {
+            follow_up_id: followUp.id,
+            evidence: "The pasted text is the update she was waiting on",
+          },
+        ],
+      },
+      { model: "test" },
+    );
+
+    const result = await repo.applyExtraction(
+      extraction.id,
+      { completed_follow_ups: [0] },
+      userId,
+    );
+    expect(result.counts.followUpsCompleted).toBe(1);
+
+    const [closed] = await db
+      .select()
+      .from(followUps)
+      .where(eq(followUps.id, followUp.id));
+    expect(closed.status).toBe("completed");
+    expect(closed.completedAt).not.toBeNull();
+    // Gone from the inbox, which is the whole point.
+    expect((await repo.listOpenFollowUps()).map((r) => r.followUp.id)).not.toContain(
+      followUp.id,
+    );
+
+    // Undo has to put it back, or a wrong close silently loses the obligation.
+    await repo.undoBatch(result.batchId, userId);
+    const [reopened] = await db
+      .select()
+      .from(followUps)
+      .where(eq(followUps.id, followUp.id));
+    expect(reopened.status).toBe("open");
+    expect(reopened.completedAt).toBeNull();
+    expect((await repo.listOpenFollowUps()).map((r) => r.followUp.id)).toContain(
+      followUp.id,
+    );
+  });
+
+  it("will not close a follow-up from another workspace", async () => {
+    const mine = await repo.createContact({ firstName: "Scoped", lastName: "Mine" });
+    const otherRepo = repoFor(otherWsId);
+    const theirs = await otherRepo.createContact({ firstName: "Scoped", lastName: "Theirs" });
+    const foreign = await otherRepo.addFollowUp({
+      contactId: theirs.id,
+      description: "Not yours to close",
+      reason: "test",
+    });
+    const interaction = await mkInteraction(`cross ws close ${run}`, [mine.id]);
+
+    await expect(
+      repo.saveProposal(
+        interaction.id,
+        {
+          contact_bindings: [
+            { mention: "Scoped", status: "confident", contact_id: mine.id, confidence: 0.99 },
+          ],
+          completed_follow_ups: [
+            { follow_up_id: foreign.id, evidence: "should be rejected" },
+          ],
+        },
+        { model: "test" },
+      ),
+    ).rejects.toThrow(/follow-up not in this workspace/);
+
+    const [untouched] = await db
+      .select()
+      .from(followUps)
+      .where(eq(followUps.id, foreign.id));
+    expect(untouched.status).toBe("open");
+  });
+
   it("undo skips rows the user edited after apply and reports it", async () => {
     const contact = await repo.createContact({ firstName: "EditRace" });
     const interaction = await mkInteraction(`edit race ${run}`, [contact.id]);

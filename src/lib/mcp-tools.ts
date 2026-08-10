@@ -22,8 +22,10 @@ Proposal JSON shape:
  "supersessions": [{"existing_memory_id", "reason", "replacement_memory_index"}],
  "already_known": [{"existing_memory_id", "restated"?}],
  "follow_ups": [{"contact": uuid-or-mention, "description", "reason" (REQUIRED), "due_date"?, "priority"?}],
+ "completed_follow_ups": [{"follow_up_id" (from openFollowUps in the context), "evidence" (what in the source shows it is done)}],
  "contact_field_updates": [{"contact_id", "field": current_company|current_role|location|phone|linkedin_url|website, "old_value"?, "new_value"}]
 }
+CLOSING THE LOOP: the context includes openFollowUps for everyone linked to this interaction. If the source text IS the thing one of them was waiting on — the user pasted a message or screenshot of what they sent, or says they finally called/emailed/met — put that follow-up in completed_follow_ups with the evidence. This is the common case when someone pastes a sent message, and missing it leaves the Home view claiming they still owe something they already did. Only close a follow-up the source actually satisfies: a message that merely mentions the same person or topic is not evidence, and a plan to do it later is not evidence either.
 Rules: NEVER guess between two plausible people — return status "ambiguous" with candidate hints. Mentioned-but-not-present people (spouse, colleague) become memories on the primary contact, NOT new contacts, unless the text implies the user has a direct relationship. Facts already in currentMemories go in already_known, not new_memories. Contradictions pair a new memory with a supersession (history is preserved). Resolve relative dates ("next spring") to absolute event_date using the interaction date and userTimezone, with honest precision. Memories are single durable third-person facts, not conversation summaries. A note with no extractable facts is a valid outcome — don't invent content.`;
 
 /**
@@ -39,6 +41,8 @@ export function buildServerInstructions(opts: { timezone: string }): string {
 DATES: The user's timezone is ${opts.timezone}. Resolve every relative date ("yesterday", "last Tuesday") against the actual current date in that timezone, to ISO 8601, before calling any tool. No stated date = assume today and say so. Genuinely ambiguous = ask.
 
 PROACTIVELY PROCESS CAPTURES — don't wait to be asked. At the start of any conversation, and again right after logging anything, call list_pending_captures. For every pending item, run the full extraction (get_extraction_context → submit_extraction_proposal) automatically, then tell the user what's staged for their review. The only thing that always waits for the user is apply_extraction — proposals are safe to stage unprompted, but nothing is written to their CRM until they approve.
+
+PASTED SENT MESSAGES CLOSE LOOPS. Screenshots and pasted text of a message the user already SENT are the most common capture. Log it like any interaction, and in the same extraction propose completing the follow-up it satisfies (completed_follow_ups). Tell the user plainly that the follow-up will close when they approve. Never leave them owing something they have shown you they already did.
 
 CAPTURING (when the user describes a conversation or pastes notes):
 1. search_contacts to identify who was PRESENT — never invent contact ids.
