@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { interactionType, memoryCategory, sourceType } from "@/db/schema";
 import type { Repo } from "@/db/repo";
+import { isDoubleOptIn } from "@/db/repo-intros";
 import {
   buildDraftInstructions,
   CHANNEL_SPECS,
@@ -64,6 +65,8 @@ RE-DRAFTING uses the SAME path: request_message_draft reopens the draft (its res
 (b) The user requested it from the web UI: call list_pending_drafts at the start of any conversation and after any apply_extraction; for each, get_draft_context → save_message_draft.
 Either way: follow the instructions field from get_draft_context exactly. Body must be the message text ONLY, no preamble, no alternatives. Ground every draft in one concrete supplied memory and invent nothing. Drafts need no approval gate — nothing is sent, the message is inert until the user sends it themselves. Then report in one line and link /drafts/<id> so they can edit and send it.
 The CRM itself never sends anything. If the user has a separate mail or chat tool and asks you to send with it, that is their call — but afterwards come back and close the loop here (the draft's Done, or complete_follow_up), or the CRM will keep insisting they still owe this person.
+
+INTROS: the user's goal is 2 double opt-in intros a month. Double opt-in means BOTH people said yes BEFORE it went out, and it is computed from the opt-in timestamps rather than stored, so it cannot be talked up. log_intro when they mention connecting two people, record_intro_opt_in for each yes they actually got, mark_intro_sent when it goes out (which schedules the 30-day check-in for you), record_intro_outcome for what really happened. Never record an opt-in the user did not tell you about, and never force a send without asking them first: an intro fired off without both yeses still gets logged, it just does not count, and that honesty is the whole point of the metric. get_intro_stats reports progress; quote the compliance rate as it comes back.
 
 HARD RULES: Never guess between two similar people — propose ambiguous bindings with hints. People merely mentioned (a spouse, a colleague) become memories on the present contact, not new contacts, unless the user clearly has their own relationship with them. New contacts are never created silently. Known facts go to already_known, not new_memories. Contradictions = supersession (history preserved). Every follow-up needs a reason. Follow-ups are editable: use update_follow_up to reschedule a due date or fix any field, and never complete-and-recreate one to change a field, because the new row abandons the draft attached to the old one. update_follow_up with status "open" also reopens anything closed by mistake. undo_extraction_batch exists — offer it if something applied was wrong.
 
@@ -148,6 +151,8 @@ export function registerCrmTools(
     async ({ contactId }) => {
       const contact = await repo.getContact(contactId);
       if (!contact) return json({ error: "Contact not found" });
+      // Intros in both directions: this contact may be either side.
+      const intros = await repo.listIntrosForContact(contactId);
       // Nudge the AI to regenerate the Layer-3 snapshot right when it's
       // looking at the contact — more reliable than the session-start sweep.
       const hasMemories = contact.memories.some((m) => m.status === "current");
@@ -155,6 +160,7 @@ export function registerCrmTools(
         contact.aiSummaryStale || (!contact.aiSummary && hasMemories);
       return json({
         ...contact,
+        intros,
         snapshotStale,
         ...(snapshotStale
           ? {
@@ -619,6 +625,287 @@ export function registerCrmTools(
         },
       });
     },
+  );
+
+  // -------------------------------------------------------------------- intros
+  //
+  // The only place two contacts are related to each other. Double opt-in is
+  // derived from the timestamps, never stored as a flag, so the goal metric
+  // can't drift from the evidence behind it.
+
+  server.registerTool(
+    "log_intro",
+    {
+      annotations: { title: "Log an intro", ...safeWrite },
+      description:
+        "Record an introduction between two people you know. Both must already be contacts — if one isn't, this returns their missing ids and you should create_contact first, then retry. If these two already have an intro in flight it returns that one instead of creating a second. Pass opt-in timestamps only for yeses you actually have, and sentAt only when back-filling an intro that already went out.",
+      inputSchema: {
+        personAContactId: z
+          .string()
+          .uuid()
+          .describe("The side the 30-day check-in follow-up will point at"),
+        personBContactId: z.string().uuid(),
+        reason: z
+          .string()
+          .describe("Why these two should know each other, in the user's words"),
+        channel: z
+          .enum(["text", "slack", "teams", "email", "other"])
+          .optional(),
+        channelLabel: z.string().optional(),
+        aOptedInAt: z
+          .string()
+          .optional()
+          .describe("ISO datetime — only if person A has actually said yes"),
+        bOptedInAt: z.string().optional(),
+        sentAt: z
+          .string()
+          .optional()
+          .describe(
+            "ISO datetime. Back-fill only: sets status to sent and spawns the 30-day check-in",
+          ),
+        introInteractionId: z.string().uuid().optional(),
+      },
+    },
+    async (args) => {
+      const result = await repo.createIntro({
+        personAContactId: args.personAContactId,
+        personBContactId: args.personBContactId,
+        reason: args.reason,
+        channel: args.channel ?? null,
+        channelLabel: args.channelLabel ?? null,
+        aOptedInAt: args.aOptedInAt ? new Date(args.aOptedInAt) : null,
+        bOptedInAt: args.bOptedInAt ? new Date(args.bOptedInAt) : null,
+        sentAt: args.sentAt ? new Date(args.sentAt) : null,
+        introInteractionId: args.introInteractionId ?? null,
+        actorUserId,
+      });
+      if (result.blocked) return json(result);
+      return json({
+        created: true,
+        introId: result.intro.id,
+        status: result.intro.status,
+        checkInFollowUpId: result.followUp?.id ?? null,
+        next:
+          result.intro.status === "sent"
+            ? "Already sent, so the 30-day check-in is scheduled."
+            : "Record each side's yes with record_intro_opt_in, then mark_intro_sent once it actually goes out.",
+      });
+    },
+  );
+
+  server.registerTool(
+    "record_intro_opt_in",
+    {
+      annotations: { title: "Record an intro opt-in", ...safeWrite },
+      description:
+        "Mark that ONE side has agreed to the intro. Only call this for a yes the user actually received — a guess here corrupts the double opt-in rate, which is the entire point of tracking it. The intro's status advances on its own once both sides are in.",
+      inputSchema: {
+        introId: z.string().uuid(),
+        contactId: z
+          .string()
+          .uuid()
+          .describe("Which of the two people said yes"),
+        optedInAt: z
+          .string()
+          .optional()
+          .describe("ISO datetime of the yes. Defaults to now."),
+      },
+    },
+    async ({ introId, contactId, optedInAt }) => {
+      const result = await repo.recordOptIn(
+        introId,
+        contactId,
+        optedInAt ? new Date(optedInAt) : null,
+        actorUserId,
+      );
+      if ("error" in result) return json(result);
+      return json({
+        recorded: true,
+        status: result.intro.status,
+        bothOptedIn:
+          !!result.intro.aOptedInAt && !!result.intro.bOptedInAt,
+      });
+    },
+  );
+
+  server.registerTool(
+    "mark_intro_sent",
+    {
+      annotations: { title: "Mark intro sent", ...safeWrite },
+      description:
+        "Record that the intro actually went out. Refuses unless both sides opted in BEFORE the send time. If it genuinely went out without asking, retry with force: true — it still gets recorded, it just won't count toward the double opt-in rate. Spawns a 30-day check-in follow-up automatically; you never need to create that yourself.",
+      inputSchema: {
+        introId: z.string().uuid(),
+        sentAt: z.string().optional().describe("ISO datetime. Defaults to now."),
+        channel: z
+          .enum(["text", "slack", "teams", "email", "other"])
+          .optional(),
+        channelLabel: z.string().optional(),
+        introInteractionId: z
+          .string()
+          .uuid()
+          .optional()
+          .describe("The logged interaction containing the actual message"),
+        force: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Only after the user confirms it went out without both opt-ins",
+          ),
+      },
+    },
+    async ({ introId, sentAt, ...rest }) => {
+      const result = await repo.markIntroSent(introId, {
+        sentAt: sentAt ? new Date(sentAt) : null,
+        channel: rest.channel ?? null,
+        channelLabel: rest.channelLabel ?? null,
+        introInteractionId: rest.introInteractionId ?? null,
+        force: rest.force,
+        actorUserId,
+      });
+      if ("error" in result) return json(result);
+      if (result.blocked) return json(result);
+      return json({
+        sent: true,
+        introId,
+        doubleOptIn: result.doubleOptIn,
+        forced: result.forced,
+        checkInFollowUpId: result.followUp?.id ?? null,
+        checkInDueDate: result.followUp?.dueDate ?? null,
+        ...(result.forced
+          ? {
+              note: "Recorded, but this one does NOT count toward the double opt-in rate. Tell the user that plainly.",
+            }
+          : {}),
+      });
+    },
+  );
+
+  server.registerTool(
+    "record_intro_outcome",
+    {
+      annotations: { title: "Record intro outcome", ...safeWrite },
+      description:
+        "Record what ACTUALLY came of an intro, not what the user hoped would. Only use what they told you: no_response means nobody replied, met_once means exactly that, ongoing means they're still in touch, opportunity means something concrete came of it, unknown means the user genuinely doesn't know. If you're inferring rather than repeating, ask instead. This closes the 30-day check-in automatically.",
+      inputSchema: {
+        introId: z.string().uuid(),
+        outcome: z.enum([
+          "no_response",
+          "met_once",
+          "ongoing",
+          "opportunity",
+          "unknown",
+        ]),
+        note: z
+          .string()
+          .optional()
+          .describe("What happened, in the user's words"),
+      },
+    },
+    async ({ introId, outcome, note }) => {
+      const result = await repo.recordIntroOutcome(
+        introId,
+        outcome,
+        note ?? null,
+        actorUserId,
+      );
+      if ("error" in result) return json(result);
+      return json({
+        recorded: true,
+        outcome: result.intro.outcome,
+        status: result.intro.status,
+        followUpsCompleted: result.followUpsCompleted,
+      });
+    },
+  );
+
+  server.registerTool(
+    "close_intro",
+    {
+      annotations: { title: "Close an intro without sending", ...safeWrite },
+      description:
+        "End an intro that never went out: 'declined' when someone said no, 'abandoned' when the user dropped it. Use record_intro_outcome instead for an intro that was actually sent. Closing frees the pair, so these two can be introduced again later.",
+      inputSchema: {
+        introId: z.string().uuid(),
+        status: z.enum(["declined", "abandoned"]),
+      },
+    },
+    async ({ introId, status }) => {
+      const result = await repo.closeIntro(introId, status, actorUserId);
+      if ("error" in result) return json(result);
+      return json({ closed: true, status: result.intro.status });
+    },
+  );
+
+  server.registerTool(
+    "list_intros",
+    {
+      annotations: { title: "List intros", ...readOnly },
+      description:
+        "List intros with their people and derived double opt-in status. Use awaitingOptIn to find intros stalled before sending, and sentWithoutOutcome to find ones where the check-in hasn't been answered yet.",
+      inputSchema: {
+        status: z
+          .array(
+            z.enum([
+              "proposed",
+              "opt_in_pending",
+              "opt_in_confirmed",
+              "sent",
+              "completed",
+              "declined",
+              "abandoned",
+            ]),
+          )
+          .optional(),
+        awaitingOptIn: z.boolean().optional(),
+        sentWithoutOutcome: z.boolean().optional(),
+        contactId: z.string().uuid().optional(),
+        sentFrom: z.string().optional().describe("ISO date"),
+        sentTo: z.string().optional().describe("ISO date"),
+      },
+    },
+    async (args) => {
+      const rows = await repo.listIntros({
+        status: args.status,
+        awaitingOptIn: args.awaitingOptIn,
+        sentWithoutOutcome: args.sentWithoutOutcome,
+        contactId: args.contactId,
+        from: args.sentFrom ? new Date(args.sentFrom) : undefined,
+        to: args.sentTo ? new Date(args.sentTo) : undefined,
+      });
+      return json(
+        rows.map(({ intro, personA, personB }) => ({
+          introId: intro.id,
+          personA: `${personA.firstName} ${personA.lastName ?? ""}`.trim(),
+          personB: `${personB.firstName} ${personB.lastName ?? ""}`.trim(),
+          status: intro.status,
+          reason: intro.reason,
+          sentAt: intro.sentAt,
+          doubleOptIn: isDoubleOptIn(intro),
+          outcome: intro.outcome,
+          outcomeNote: intro.outcomeNote,
+        })),
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_intro_stats",
+    {
+      annotations: { title: "Intro goal stats", ...readOnly },
+      description:
+        "Progress against the user's intros-per-month goal, plus the double opt-in compliance rate and outcome spread. Months are calendar months in the user's own timezone. The compliance rate is derived from the opt-in timestamps, so intros sent without both yeses are excluded automatically — report that number as-is rather than rounding it up.",
+      inputSchema: {
+        monthsBack: z
+          .number()
+          .int()
+          .min(1)
+          .max(36)
+          .default(12)
+          .describe("How many calendar months to include"),
+      },
+    },
+    async ({ monthsBack }) => json(await repo.getIntroStats(monthsBack)),
   );
 
   // ------------------------------------------------------------------ drafting

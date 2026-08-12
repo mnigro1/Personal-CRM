@@ -5,6 +5,7 @@ import {
   followUps,
   interactions,
   interactionContacts,
+  intros,
   memories,
   messageDrafts,
   users,
@@ -313,6 +314,44 @@ export function draftOpsFor(workspaceId: string, base: BaseRepo) {
       const last = lastRows[0]?.interaction ?? null;
       const c = row.contact;
 
+      // An intro check-in is about two people, but the follow-up hangs off
+      // one. Pull the counterpart so the draft can name them.
+      let intro: DraftContext["intro"] = null;
+      if (row.followUp?.introId) {
+        const [introRow] = await db
+          .select()
+          .from(intros)
+          .where(
+            and(
+              eq(intros.id, row.followUp.introId),
+              eq(intros.workspaceId, workspaceId),
+            ),
+          );
+        if (introRow) {
+          const otherId =
+            introRow.personAContactId === c.id
+              ? introRow.personBContactId
+              : introRow.personAContactId;
+          const [other] = await db
+            .select()
+            .from(contacts)
+            .where(
+              and(
+                eq(contacts.id, otherId),
+                eq(contacts.workspaceId, workspaceId),
+              ),
+            );
+          if (other) {
+            intro = {
+              otherPersonName: `${other.preferredName ?? other.firstName} ${other.lastName ?? ""}`.trim(),
+              reason: introRow.reason,
+              sentAt: introRow.sentAt?.toISOString().slice(0, 10) ?? null,
+              outcome: introRow.outcome,
+            };
+          }
+        }
+      }
+
       return {
         channel: row.draft.channel,
         channelLabel: row.draft.channelLabel,
@@ -333,6 +372,7 @@ export function draftOpsFor(workspaceId: string, base: BaseRepo) {
               dueDate: row.followUp.dueDate,
             }
           : null,
+        intro,
         otherOpenFollowUps: otherFollowUps.map((f) => f.description),
         memories: selectMemories(memoryRows),
         lastInteraction: last

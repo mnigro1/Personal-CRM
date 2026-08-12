@@ -41,6 +41,44 @@ Tools: contacts/interactions/memories/follow-ups CRUD + the extraction pipeline 
 
 The usage contract (date handling, capture workflow, approval gates, retrieval patterns) is delivered automatically to every client via the MCP `instructions` field at initialize time, personalized with the user's timezone (`buildServerInstructions` in `src/lib/mcp-tools.ts`). [`mcp/CLAUDE_PROJECT_INSTRUCTIONS.md`](mcp/CLAUDE_PROJECT_INSTRUCTIONS.md) is the same contract in paste-into-project-instructions form — optional reinforcement for clients that under-weight the protocol field.
 
+## Intros
+
+The one place two contacts are related to each other. Everything else in the
+CRM hangs off a single `contact_id`; an intro is a `(person_a, person_b)` pair
+with a lifecycle.
+
+**Lifecycle.** `proposed` → `opt_in_pending` → `opt_in_confirmed` → `sent` →
+`completed`, with `declined` and `abandoned` as the other two ends. Status is
+never set directly by a caller: `record_intro_opt_in` derives it from the
+timestamps, so status and evidence cannot disagree.
+
+**The double opt-in rule.** An intro counts toward the goal only if both
+`a_opted_in_at` and `b_opted_in_at` are set *and both are earlier than*
+`sent_at`. That is computed on read, never stored as a flag, so the
+compliance rate can't be talked up and recording a yes after the fact can't
+rescue an intro that went out cold. `mark_intro_sent` refuses without both
+opt-ins; `force: true` still records the intro but it fails the derived check
+and is reported separately by `get_intro_stats`.
+
+**The 30-day check-in is automatic.** Transitioning to `sent` creates a
+follow-up due `sent_at + 30 days` with `intro_id` set, pointed at
+`person_a_contact_id`. Follow-ups stay single-contact; `get_draft_context`
+joins through `intro_id` to name the other person and quote the reason, so
+the existing drafting machinery works unchanged. `record_intro_outcome`
+completes that follow-up — you never close it separately.
+
+**Duplicates.** One live intro per unordered pair, enforced by a partial
+unique index on `least/greatest` of the two contact ids. `log_intro` returns
+the existing intro rather than erroring. Reaching a terminal state frees the
+pair, so two people can be introduced again later.
+
+Goal lives in `users.settings_json` as `goals.introsPerMonth` (default 2),
+editable in Settings. Months are bucketed in the owner's timezone.
+
+Existing `type = 'intro'` interactions are **not** backfilled automatically —
+that would invent opt-in history. `npx tsx scripts/list-intro-interactions.ts`
+lists them with a suggested `log_intro` call so you can decide case by case.
+
 ## Tests
 
 `npm test` — unit tests always run; integration tests (workspace isolation,

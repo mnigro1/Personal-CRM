@@ -3,6 +3,7 @@ import {
   createInviteAction,
   createMcpTokenAction,
   revokeMcpTokenAction,
+  updateGoalsAction,
   updateTimezoneAction,
   updateVoiceAction,
 } from "@/app/actions";
@@ -25,13 +26,17 @@ import { requireSession } from "@/lib/session";
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ newToken?: string; voiceSaved?: string }>;
+  searchParams: Promise<{ newToken?: string; voiceSaved?: string; goalsSaved?: string }>;
 }) {
-  const { newToken, voiceSaved } = await searchParams;
+  const { newToken, voiceSaved, goalsSaved } = await searchParams;
   const { user, workspace } = await requireSession();
   const inviteRows = await repoFor(workspace.id).listInvites(user.id);
   const tokens = await listMcpTokens(user.id);
   const voice = voiceFor(user);
+  const settings = (user.settingsJson ?? {}) as Record<string, unknown>;
+  const goals = (settings.goals ?? {}) as Record<string, unknown>;
+  const introsPerMonth =
+    typeof goals.introsPerMonth === "number" ? goals.introsPerMonth : 2;
   const h = await headers();
   const origin =
     process.env.APP_URL ??
@@ -149,6 +154,39 @@ export default async function SettingsPage({
               </div>
               <Button type="submit" size="sm">Save voice</Button>
             </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Goals</CardTitle>
+          <CardDescription>
+            How many double opt-in intros you aim to make each month. An intro
+            only counts once both people have said yes and it has actually
+            gone out.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {goalsSaved === "1" && (
+            <p className="mb-3 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100">
+              Goal saved.
+            </p>
+          )}
+          <form action={updateGoalsAction} className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="introsPerMonth">Intros per month</Label>
+              <Input
+                id="introsPerMonth"
+                name="introsPerMonth"
+                type="number"
+                min={0}
+                max={100}
+                defaultValue={introsPerMonth}
+                className="w-32"
+              />
+            </div>
+            <Button type="submit" size="sm">Save goal</Button>
           </form>
         </CardContent>
       </Card>

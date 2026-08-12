@@ -11,6 +11,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,28 @@ export const messageDraftStatus = pgEnum("message_draft_status", [
   "sent",
   "sent_other",
   "discarded",
+]);
+
+// Lifecycle of a double opt-in introduction. Terminal states are completed,
+// declined and abandoned; the rest are in flight. Status is never set
+// directly by a caller — the transition helpers derive it, so it can't
+// contradict the opt-in timestamps.
+export const introStatus = pgEnum("intro_status", [
+  "proposed",
+  "opt_in_pending",
+  "opt_in_confirmed",
+  "sent",
+  "completed",
+  "declined",
+  "abandoned",
+]);
+
+export const introOutcome = pgEnum("intro_outcome", [
+  "no_response",
+  "met_once",
+  "ongoing",
+  "opportunity",
+  "unknown",
 ]);
 
 export const extractionRunStatus = pgEnum("extraction_run_status", [
@@ -423,6 +446,13 @@ export const followUps = pgTable(
     contactId: uuid("contact_id")
       .notNull()
       .references(() => contacts.id, { onDelete: "cascade" }),
+    // Set on the 30-day check-in spawned when an intro is sent. Also the
+    // marker for "the system made this", so created_by needs no new value.
+    // set null, not cascade: losing the intro must not silently delete an
+    // obligation the user still has.
+    introId: uuid("intro_id").references((): AnyPgColumn => intros.id, {
+      onDelete: "set null",
+    }),
     description: text("description").notNull(),
     // Required: the AI must always explain why it proposed a follow-up.
     reason: text("reason").notNull(),
@@ -487,6 +517,64 @@ export const messageDrafts = pgTable(
     index("message_drafts_workspace_idx").on(t.workspaceId),
     index("message_drafts_follow_up_idx").on(t.followUpId),
     index("message_drafts_status_idx").on(t.workspaceId, t.status),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Intros — the one place two contacts are related to each other.
+//
+// Deliberately no deleted_at: `declined` and `abandoned` already mean "not
+// live", and a second independent liveness flag is how queries start
+// disagreeing about which rows count.
+//
+// Double opt-in is never stored as a boolean. It is derived from the two
+// opt-in timestamps against sent_at, so the compliance metric cannot drift
+// from the evidence behind it.
+// ---------------------------------------------------------------------------
+
+export const intros = pgTable(
+  "intros",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    // person_a is the side the 30-day check-in follow-up points at. The pair
+    // itself is unordered for duplicate detection (see the least/greatest
+    // unique index in the migration).
+    personAContactId: uuid("person_a_contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    personBContactId: uuid("person_b_contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    status: introStatus("status").notNull().default("proposed"),
+    aOptedInAt: timestamp("a_opted_in_at", { withTimezone: true }),
+    bOptedInAt: timestamp("b_opted_in_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    channel: messageChannel("channel"),
+    channelLabel: text("channel_label"),
+    // The actual message, once logged as an interaction.
+    introInteractionId: uuid("intro_interaction_id").references(
+      () => interactions.id,
+      { onDelete: "set null" },
+    ),
+    outcome: introOutcome("outcome"),
+    outcomeNote: text("outcome_note"),
+    outcomeRecordedAt: timestamp("outcome_recorded_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("intros_workspace_idx").on(t.workspaceId),
+    index("intros_person_a_idx").on(t.personAContactId),
+    index("intros_person_b_idx").on(t.personBContactId),
+    index("intros_workspace_status_idx").on(t.workspaceId, t.status),
   ],
 );
 
