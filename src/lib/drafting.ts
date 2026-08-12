@@ -122,6 +122,17 @@ export type DraftContext = {
     relationshipCategory: string | null;
   };
   followUp: { description: string; reason: string; dueDate: string | null } | null;
+  /**
+   * Set when this draft's follow-up is an intro check-in. Follow-ups stay
+   * single-contact, so the counterpart lives here rather than being folded
+   * into otherOpenFollowUps, which is scoped to the same person.
+   */
+  intro: {
+    otherPersonName: string;
+    reason: string;
+    sentAt: string | null;
+    outcome: string | null;
+  } | null;
   otherOpenFollowUps: string[];
   memories: { id: string; text: string; category: string; eventDate: string | null }[];
   lastInteraction: { date: string; type: string; summary: string | null } | null;
@@ -186,6 +197,19 @@ export function renderDraftContext(ctx: DraftContext): string {
     lines.push(`THE ASK: ${ctx.followUp.description}`);
     lines.push(`WHY NOW: ${ctx.followUp.reason}`);
     if (ctx.followUp.dueDate) lines.push(`DUE: ${ctx.followUp.dueDate}`);
+  }
+
+  if (ctx.intro) {
+    lines.push("");
+    lines.push(
+      `THIS IS AN INTRO CHECK-IN. You introduced them to ${ctx.intro.otherPersonName}${
+        ctx.intro.sentAt ? ` on ${ctx.intro.sentAt}` : ""
+      }.`,
+    );
+    lines.push(`WHY YOU CONNECTED THEM: ${ctx.intro.reason}`);
+    lines.push(
+      "Ask whether anything came of it. Keep it light and give them an easy out if nothing did, because most intros go nowhere and that is not a failure on their part.",
+    );
   }
 
   if (ctx.lastInteraction) {

@@ -29,6 +29,7 @@ import { revisions } from "@/db/schema";
 import { extractionOpsFor } from "@/db/repo-extraction";
 import { draftOpsFor } from "@/db/repo-drafts";
 import { mergeOpsFor } from "@/db/repo-merge";
+import { introOpsFor } from "@/db/repo-intros";
 
 const camelToSnake = (s: string) =>
   s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -778,6 +779,8 @@ export function repoFor(workspaceId: string) {
       dueDate?: string | null;
       priority?: (typeof followUps.$inferInsert)["priority"];
       createdBy?: "user" | "ai";
+      /** Set for the 30-day check-in spawned when an intro is sent. */
+      introId?: string | null;
     }) {
       const [row] = await db
         .insert(followUps)
@@ -789,6 +792,7 @@ export function repoFor(workspaceId: string) {
           dueDate: data.dueDate ?? null,
           priority: data.priority ?? "medium",
           createdBy: data.createdBy ?? "user",
+          introId: data.introId ?? null,
         })
         .returning();
       return row;
@@ -950,6 +954,7 @@ export function repoFor(workspaceId: string) {
     ...extractionOpsFor(workspaceId, base),
     ...draftOpsFor(workspaceId, base),
     ...mergeOpsFor(workspaceId, base),
+    ...introOpsFor(workspaceId, base),
   };
 }
 

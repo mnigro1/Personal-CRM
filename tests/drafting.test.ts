@@ -27,6 +27,7 @@ const ctx = (over: Partial<DraftContext> = {}): DraftContext => ({
     relationshipCategory: "Professional",
   },
   followUp: { description: "Send the deck", reason: "She asked after the demo", dueDate: "2026-08-01" },
+  intro: null,
   otherOpenFollowUps: [],
   memories: [
     { id: "m1", text: "Taking a sabbatical in September", category: "career", eventDate: "2026-09-01" },

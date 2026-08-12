@@ -43,6 +43,13 @@
       "when": 1784814870348,
       "tag": "0005_lying_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786546358802,
+      "tag": "0006_lethal_ricochet",
+      "breakpoints": true
     }
   ]
 }

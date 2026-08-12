@@ -427,6 +427,33 @@ export async function updateVoiceAction(formData: FormData) {
   redirect("/settings?voiceSaved=1");
 }
 
+/** Relationship goals. Lives beside `drafting` in the same settings blob. */
+export async function updateGoalsAction(formData: FormData) {
+  const { user } = await requireSession();
+  const raw = Number(str(formData, "introsPerMonth"));
+  if (!Number.isInteger(raw) || raw < 0 || raw > 100) {
+    throw new Error("Intros per month must be a whole number between 0 and 100");
+  }
+  const existing =
+    user.settingsJson && typeof user.settingsJson === "object"
+      ? (user.settingsJson as Record<string, unknown>)
+      : {};
+  await db
+    .update(users)
+    .set({
+      settingsJson: {
+        ...existing,
+        goals: {
+          ...((existing.goals as Record<string, unknown>) ?? {}),
+          introsPerMonth: raw,
+        },
+      },
+    })
+    .where(eq(users.id, user.id));
+  revalidatePath("/settings");
+  redirect("/settings?goalsSaved=1");
+}
+
 export async function updateTimezoneAction(formData: FormData) {
   const { user } = await requireSession();
   const timezone = str(formData, "timezone");
