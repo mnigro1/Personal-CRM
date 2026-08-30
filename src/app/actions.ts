@@ -529,3 +529,78 @@ export async function discardDraftAction(draftId: string) {
   redirect("/");
 }
 
+// ------------------------------------------------------------------- intros
+
+export async function createIntroAction(formData: FormData) {
+  const { workspace } = await requireSession();
+  const personAContactId = str(formData, "personA");
+  const personBContactId = str(formData, "personB");
+  const reason = str(formData, "reason");
+  if (!personAContactId || !personBContactId) {
+    throw new Error("Pick two people");
+  }
+  if (personAContactId === personBContactId) {
+    throw new Error("An intro needs two different people");
+  }
+  if (!reason) throw new Error("Say why you're connecting them");
+
+  const result = await repoFor(workspace.id).createIntro({
+    personAContactId,
+    personBContactId,
+    reason,
+  });
+  revalidatePath("/intros");
+  if ("blocked" in result) throw new Error(result.reason);
+  redirect(`/intros`);
+}
+
+export async function recordIntroOptInAction(introId: string, contactId: string) {
+  const { workspace } = await requireSession();
+  const result = await repoFor(workspace.id).recordOptIn(
+    introId,
+    contactId,
+    new Date(),
+  );
+  revalidatePath("/intros");
+  if (result && "error" in result) throw new Error(result.error);
+}
+
+export async function markIntroSentAction(introId: string, formData: FormData) {
+  const { workspace } = await requireSession();
+  const channel = str(formData, "channel");
+  const force = formData.get("force") === "on";
+  const result = await repoFor(workspace.id).markIntroSent(introId, {
+    channel: (channel as Channel) ?? undefined,
+    force,
+  });
+  revalidatePath("/intros");
+  if ("error" in result) throw new Error(result.error);
+  if (result.blocked) throw new Error(result.reason);
+}
+
+export async function recordIntroOutcomeAction(
+  introId: string,
+  formData: FormData,
+) {
+  const { workspace } = await requireSession();
+  const outcome = str(formData, "outcome");
+  if (!outcome) throw new Error("Pick what happened");
+  const result = await repoFor(workspace.id).recordIntroOutcome(
+    introId,
+    outcome as "no_response" | "met_once" | "ongoing" | "opportunity" | "unknown",
+    str(formData, "note"),
+  );
+  revalidatePath("/intros");
+  if ("error" in result) throw new Error(result.error);
+}
+
+export async function closeIntroAction(
+  introId: string,
+  status: "declined" | "abandoned",
+) {
+  const { workspace } = await requireSession();
+  const result = await repoFor(workspace.id).closeIntro(introId, status);
+  revalidatePath("/intros");
+  if ("error" in result) throw new Error(result.error);
+}
+

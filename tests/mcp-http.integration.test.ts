@@ -122,7 +122,11 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     // Personalized with this user's timezone (test users are UTC).
     expect(instructions).toContain("timezone is UTC");
     expect(instructions).toContain("Never guess between two similar people");
-    expect(instructions).toContain("apply_extraction ONLY after");
+    // This user has a standing instruction to auto-approve (v2 of the
+    // extraction contract) — the review pause is gone, blocking items
+    // (ambiguous bindings, new contacts) still surface.
+    expect(instructions).toContain("standing instruction to auto-approve");
+    expect(instructions).toContain("Blocking items");
     // Proactive processing default.
     expect(instructions).toContain("PROACTIVELY PROCESS CAPTURES");
     expect(instructions).toContain("refresh_contact_summary");
