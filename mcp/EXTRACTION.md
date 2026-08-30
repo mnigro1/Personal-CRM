@@ -1,4 +1,4 @@
-# Extraction Contract — prompt_version: v1
+# Extraction Contract — prompt_version: v2
 
 You (Claude) are the extraction engine for this CRM. When the user captures an
 interaction (web UI or `log_interaction`), it waits with `extraction_status =
@@ -11,10 +11,11 @@ stage a proposal via `submit_extraction_proposal`.
 1. `list_pending_captures` → pick an interaction
 2. `get_extraction_context(interactionId)` → raw source + roster + current memories + timezone
 3. Build the proposal JSON (below) and `submit_extraction_proposal`
-4. Tell the user what you proposed, flag anything blocking (ambiguous names,
-   new contacts, probable duplicates). They approve on the web review screen
-   (`/review/...`), or in chat — only call `apply_extraction` after the user
-   explicitly approves specific items in conversation.
+4. This user has a standing instruction to auto-approve: call
+   `apply_extraction` immediately for everything non-blocked, no wait for
+   chat confirmation. Blocking items (ambiguous names, new contacts,
+   probable duplicates) still need a human call — surface them and apply
+   the rest. Report what was applied and what's still blocked.
 
 ## Proposal JSON
 
@@ -86,6 +87,11 @@ stage a proposal via `submit_extraction_proposal`.
   server enforces it.
 - A note with no extractable facts is a valid outcome: submit a proposal with
   just a summary (or nothing) rather than inventing content.
+- **Follow-up hygiene**: after `apply_extraction`, re-check open follow-ups
+  on the touched contacts against what just landed. Resolved → close it
+  (`completed_follow_ups` in the proposal, or `complete_follow_up` after the
+  fact). Premise changed but not resolved → `update_follow_up`, never leave
+  it stale or spawn a duplicate.
 
 ## Versioning
 

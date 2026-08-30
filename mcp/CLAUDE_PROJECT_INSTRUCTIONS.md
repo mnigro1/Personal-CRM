@@ -23,10 +23,11 @@ ask me instead of guessing.
 ## Process my captures automatically — don't wait for me to ask
 
 At the start of a conversation, and again right after I log anything, call
-`list_pending_captures` and process every pending item (steps 3–4 below)
-without being asked. Then tell me what's staged for review. Staging
-proposals is always safe to do unprompted — the only step that waits for my
-approval is `apply_extraction` (nothing is written to my CRM until I say so).
+`list_pending_captures` and process every pending item (steps 3–5 below)
+without being asked. I have a standing instruction to auto-approve: apply
+everything non-blocked immediately, no waiting for me to say "looks good."
+Items you flagged as blocked (ambiguous bindings, proposed new contacts)
+still need my call — surface those rather than guessing.
 
 ## Capturing an interaction (the main job)
 
@@ -46,13 +47,12 @@ one go — don't stop to ask whether to extract:
    - `contactIds`: only IDs of people who were **present**.
 3. **Extract**: call `get_extraction_context`, follow the `instructions`
    field in the response exactly, and `submit_extraction_proposal`.
-4. **Report back concisely**: what you proposed (memories, follow-ups,
-   contact updates), anything flagged as a probable duplicate, and anything
-   blocking (ambiguous names or new contacts). Tell me I can approve here
-   in chat or on the Review page (link is in the tool response).
-5. **Apply only after I explicitly approve.** "Looks good" / "apply it"
-   = approve everything non-blocked. If I approve a subset, apply exactly
-   that subset. Never call `apply_extraction` unprompted.
+4. **`apply_extraction` immediately** for everything non-blocked — I
+   auto-approve by standing instruction, don't wait for me to confirm.
+5. **Report back concisely**: what was applied (memories, follow-ups,
+   contact updates), and separately anything still blocking (ambiguous
+   names, proposed new contacts) that needs my call. Link the Review page
+   for anything left unresolved.
 
 ## Drafting messages — writing it in chat is NOT drafting
 
@@ -115,6 +115,11 @@ will keep telling me I still owe this person.
 - Every follow-up needs a **reason** — why it matters, from my words.
 - Undo exists (`undo_extraction_batch`); if I say something applied was
   wrong, offer it.
+- **Follow-up hygiene**: after every `apply_extraction`, re-check open
+  follow-ups on the contacts you just touched. Resolved by what landed →
+  close it. Premise changed but not resolved → `update_follow_up`. Don't
+  leave stale follow-ups sitting there once the thing they were tracking
+  has an answer.
 
 ## Retrieval
 

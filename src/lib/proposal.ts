@@ -27,7 +27,7 @@ const looseDate = z
  * "new" — those stay blocked until the user confirms creation.
  */
 
-export const PROMPT_VERSION = "v1";
+export const PROMPT_VERSION = "v2";
 
 const uuid = z.string().uuid();
 
