@@ -2,6 +2,13 @@ import Link from "next/link";
 import { deleteContactAction } from "@/app/actions";
 import { ClickableRow } from "@/components/clickable-row";
 import { repoFor, type ContactFilters } from "@/db/repo";
+import {
+  nextSortState,
+  parseSortState,
+  sortContacts,
+  type SortDir,
+  type SortKey,
+} from "@/lib/contact-sort";
 import { requireSession } from "@/lib/session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +24,39 @@ import {
 
 function asStr(v: string | string[] | undefined): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
+}
+
+/** A column header that cycles the sort on click; the arrow shows the state. */
+function SortHead({
+  active,
+  dir,
+  href,
+  children,
+}: {
+  active: boolean;
+  dir: SortDir | undefined;
+  href: string;
+  children: React.ReactNode;
+}) {
+  const arrow = !active ? "↕" : dir === "asc" ? "↑" : "↓";
+  return (
+    <TableHead
+      aria-sort={!active ? "none" : dir === "asc" ? "ascending" : "descending"}
+    >
+      <Link
+        href={href}
+        className={`inline-flex items-center gap-1 hover:text-foreground ${active ? "text-foreground" : ""}`}
+      >
+        {children}
+        <span
+          aria-hidden
+          className={`text-xs ${active ? "" : "text-muted-foreground/50"}`}
+        >
+          {arrow}
+        </span>
+      </Link>
+    </TableHead>
+  );
 }
 
 export default async function ContactsPage({
@@ -45,13 +85,47 @@ export default async function ContactsPage({
     hasOpenFollowUps: sp.openFollowUps === "1",
   };
 
-  const rows = await repo.listContacts(filters);
+  const unsorted = await repo.listContacts(filters);
   const openFollowUps = await repo.listOpenFollowUps();
   const followUpCounts = openFollowUps.reduce((m, f) => {
     m.set(f.contact.id, (m.get(f.contact.id) ?? 0) + 1);
     return m;
   }, new Map<string, number>());
-  const hasFilters = Object.values(sp).some((v) => v !== undefined && v !== "");
+
+  // Column sort lives in the URL so it survives refresh and composes with
+  // the filters above. Click cycle: asc → desc → default order.
+  const sortState = parseSortState(asStr(sp.sort), asStr(sp.dir));
+  const rows = sortContacts(unsorted, sortState, (c) => followUpCounts.get(c.id) ?? 0);
+
+  const sortHref = (key: SortKey) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) {
+      if (k === "sort" || k === "dir" || v === undefined) continue;
+      for (const item of Array.isArray(v) ? v : [v]) if (item !== "") params.append(k, item);
+    }
+    const next = nextSortState(sortState, key);
+    if (next) {
+      params.set("sort", next.key);
+      params.set("dir", next.dir);
+    }
+    const qs = params.toString();
+    return qs ? `/contacts?${qs}` : "/contacts";
+  };
+
+  const head = (key: SortKey, label: string) => (
+    <SortHead
+      active={sortState?.key === key}
+      dir={sortState?.dir}
+      href={sortHref(key)}
+    >
+      {label}
+    </SortHead>
+  );
+
+  // Filters count toward "Clear"; sort state has its own reset (third click).
+  const hasFilters = Object.entries(sp).some(
+    ([k, v]) => k !== "sort" && k !== "dir" && v !== undefined && v !== "",
+  );
 
   return (
     <div className="space-y-6">
@@ -99,10 +173,10 @@ export default async function ContactsPage({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Company / Role</TableHead>
-            <TableHead>Last interaction</TableHead>
-            <TableHead>Follow-ups</TableHead>
+            {head("name", "Name")}
+            {head("company", "Company / Role")}
+            {head("last", "Last interaction")}
+            {head("followups", "Follow-ups")}
           </TableRow>
         </TableHeader>
         <TableBody>
