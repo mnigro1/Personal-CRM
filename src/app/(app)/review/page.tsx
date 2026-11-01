@@ -10,10 +10,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { repoFor } from "@/db/repo";
+import { formatDate } from "@/lib/dates";
 import { requireSession } from "@/lib/session";
 
 export default async function ReviewInboxPage() {
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const [pending, proposed, failed] = await Promise.all([
     repo.listPendingCaptures(),
@@ -44,7 +45,7 @@ export default async function ReviewInboxPage() {
               <div className="min-w-0">
                 <p className="truncate text-sm">{interaction.rawSource.slice(0, 120)}</p>
                 <p className="text-xs text-muted-foreground">
-                  {interaction.type} · {new Date(interaction.occurredAt).toLocaleDateString()} · attempt {extraction.attempt} · {extraction.model}
+                  {interaction.type} · {formatDate(interaction.occurredAt, user.timezone)} · attempt {extraction.attempt} · {extraction.model}
                 </p>
               </div>
               <Button size="sm" nativeButton={false} render={<Link href={`/review/${extraction.id}`} />}>

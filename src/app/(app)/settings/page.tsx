@@ -1,8 +1,9 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import {
   createInviteAction,
   createMcpTokenAction,
   revokeMcpTokenAction,
+  updateExtractionSettingsAction,
   updateGoalsAction,
   updateTimezoneAction,
   updateVoiceAction,
@@ -20,19 +21,29 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { repoFor } from "@/db/repo";
 import { listMcpTokens } from "@/db/tokens";
+import { NEW_MCP_TOKEN_COOKIE } from "@/lib/cookies";
+import { formatDate, formatDateTime } from "@/lib/dates";
 import { voiceFor } from "@/lib/drafting";
 import { requireSession } from "@/lib/session";
+import { extractionSettingsFor } from "@/lib/user-settings";
 
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ newToken?: string; voiceSaved?: string; goalsSaved?: string }>;
+  searchParams: Promise<{
+    voiceSaved?: string;
+    goalsSaved?: string;
+    extractionSaved?: string;
+  }>;
 }) {
-  const { newToken, voiceSaved, goalsSaved } = await searchParams;
+  const { voiceSaved, goalsSaved, extractionSaved } = await searchParams;
   const { user, workspace } = await requireSession();
   const inviteRows = await repoFor(workspace.id).listInvites(user.id);
   const tokens = await listMcpTokens(user.id);
+  // Set by createMcpTokenAction moments ago; expires on its own.
+  const newToken = (await cookies()).get(NEW_MCP_TOKEN_COOKIE)?.value;
   const voice = voiceFor(user);
+  const extraction = extractionSettingsFor(user.settingsJson);
   const settings = (user.settingsJson ?? {}) as Record<string, unknown>;
   const goals = (settings.goals ?? {}) as Record<string, unknown>;
   const introsPerMonth =
@@ -60,7 +71,8 @@ export default async function SettingsPage({
           {newToken && (
             <div className="space-y-1 rounded-lg border border-green-300 bg-green-50 p-3 text-sm dark:border-green-800 dark:bg-green-950">
               <p className="font-medium">
-                Your connector URL — copy it now, it won&apos;t be shown again:
+                Your connector URL — copy it now. It leaves this page in a
+                couple of minutes and can&apos;t be shown again:
               </p>
               <code className="block break-all rounded bg-background p-2 text-xs">
                 {origin}/api/mcp/{newToken}
@@ -81,9 +93,9 @@ export default async function SettingsPage({
                   <div>
                     <p className="font-medium">{t.label}</p>
                     <p className="text-xs text-muted-foreground">
-                      Created {new Date(t.createdAt).toLocaleDateString()}
+                      Created {formatDate(t.createdAt, user.timezone)}
                       {t.lastUsedAt
-                        ? ` · last used ${new Date(t.lastUsedAt).toLocaleString()}`
+                        ? ` · last used ${formatDateTime(t.lastUsedAt, user.timezone)}`
                         : " · never used"}
                     </p>
                   </div>
@@ -96,6 +108,45 @@ export default async function SettingsPage({
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>AI extraction</CardTitle>
+          <CardDescription>
+            When your AI turns notes into memories and follow-ups, it can
+            apply them straight away or stage them for you to review first.
+            Either way, new people and ambiguous names always wait for your
+            call, and every applied batch can be undone.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {extractionSaved === "1" && (
+            <p className="mb-3 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100">
+              Saved. Your AI picks this up the next time you start a chat.
+            </p>
+          )}
+          <form action={updateExtractionSettingsAction} className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="autoApply">Proposals are</Label>
+              <select
+                id="autoApply"
+                name="autoApply"
+                defaultValue={extraction.autoApply ? "yes" : "no"}
+                className="rounded border px-2 py-2 text-sm"
+              >
+                <option value="yes">applied automatically</option>
+                <option value="no">held for my review</option>
+              </select>
+            </div>
+            <Button type="submit" size="sm">Save</Button>
+          </form>
+          <p className="mt-3 text-xs text-muted-foreground">
+            &ldquo;Held for my review&rdquo; is the safer choice if you paste
+            in text written by other people — the AI then can&apos;t be talked
+            into writing anything down without you seeing it first.
+          </p>
         </CardContent>
       </Card>
 
@@ -234,7 +285,7 @@ export default async function SettingsPage({
                   <p className="font-medium">{inv.email}</p>
                   {inv.acceptedAt ? (
                     <p className="text-muted-foreground">
-                      Accepted {new Date(inv.acceptedAt).toLocaleDateString()}
+                      Accepted {formatDate(inv.acceptedAt, user.timezone)}
                     </p>
                   ) : new Date(inv.expiresAt) < new Date() ? (
                     <p className="text-muted-foreground">Expired</p>

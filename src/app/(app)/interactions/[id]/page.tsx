@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { repoFor } from "@/db/repo";
 import { interactionType } from "@/db/schema";
+import { formatDateTime, utcToZonedLocal } from "@/lib/dates";
 import { requireSession } from "@/lib/session";
 
 export default async function InteractionPage({
@@ -40,7 +41,7 @@ export default async function InteractionPage({
   const { id } = await params;
   const { duplicate, applied, undone, skipped, rerun, saved } =
     await searchParams;
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const interaction = await repo.getInteraction(id);
   if (!interaction) notFound();
@@ -50,9 +51,7 @@ export default async function InteractionPage({
   const proposedRun = extractionRuns.find((e) => e.status === "proposed");
 
   const occurred = new Date(interaction.occurredAt);
-  const local = new Date(occurred.getTime() - occurred.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
+  const local = utcToZonedLocal(occurred, user.timezone);
 
   return (
     <div className="space-y-6">
@@ -90,7 +89,7 @@ export default async function InteractionPage({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">
-            {interaction.type} · {occurred.toLocaleString()}
+            {interaction.type} · {formatDateTime(occurred, user.timezone)}
           </h1>
           <Badge
             variant={
@@ -236,9 +235,9 @@ export default async function InteractionPage({
                     {run.promptVersion}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {new Date(run.createdAt).toLocaleString()}
+                    {formatDateTime(run.createdAt, user.timezone)}
                     {run.appliedAt &&
-                      ` · applied ${new Date(run.appliedAt).toLocaleString()}`}
+                      ` · applied ${formatDateTime(run.appliedAt, user.timezone)}`}
                     {run.error && ` · ${run.error}`}
                   </p>
                 </div>

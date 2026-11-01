@@ -9,6 +9,8 @@ import {
   type SortDir,
   type SortKey,
 } from "@/lib/contact-sort";
+import { formatDate } from "@/lib/dates";
+import { safeHttpUrl } from "@/lib/normalize";
 import { requireSession } from "@/lib/session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,9 +67,8 @@ export default async function ContactsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
-
 
   const filters: ContactFilters = {
     q: asStr(sp.q),
@@ -198,9 +199,9 @@ export default async function ContactsPage({
               <TableCell className="font-medium">
                 <span className="flex items-center gap-1.5">
                   {c.preferredName ?? c.firstName} {c.lastName ?? ""}
-                  {c.linkedinUrl && (
+                  {safeHttpUrl(c.linkedinUrl) && (
                     <a
-                      href={c.linkedinUrl}
+                      href={safeHttpUrl(c.linkedinUrl)!}
                       target="_blank"
                       rel="noreferrer"
                       title="LinkedIn profile"
@@ -222,7 +223,7 @@ export default async function ContactsPage({
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {c.lastInteractionDate
-                  ? new Date(c.lastInteractionDate).toLocaleDateString()
+                  ? formatDate(c.lastInteractionDate, user.timezone)
                   : "—"}
               </TableCell>
               <TableCell className="text-sm">

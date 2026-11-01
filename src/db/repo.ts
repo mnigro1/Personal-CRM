@@ -24,7 +24,12 @@ import {
   invites,
   memories,
 } from "@/db/schema";
-import { normalizeDate, sourceHash } from "@/lib/normalize";
+import {
+  normalizeDate,
+  normalizeEmail,
+  safeHttpUrl,
+  sourceHash,
+} from "@/lib/normalize";
 import { revisions } from "@/db/schema";
 import { extractionOpsFor } from "@/db/repo-extraction";
 import { draftOpsFor } from "@/db/repo-drafts";
@@ -69,6 +74,43 @@ export type NewInteraction = {
 export function repoFor(workspaceId: string) {
   const wsContacts = () =>
     and(eq(contacts.workspaceId, workspaceId), isNull(contacts.deletedAt));
+
+  /**
+   * Every contact id a caller hands us must resolve inside this workspace.
+   * Ids arrive from forms and MCP calls, both of which a client can tamper
+   * with; without this check a link row would land in our workspace but
+   * point at someone else's contact.
+   */
+  async function assertContactsInWorkspace(contactIds: string[]) {
+    const ids = [...new Set(contactIds)];
+    if (ids.length === 0) return;
+    const found = await db
+      .select({ id: contacts.id })
+      .from(contacts)
+      .where(and(inArray(contacts.id, ids), wsContacts()));
+    if (found.length !== ids.length) throw new Error("Contact not found");
+  }
+
+  async function assertInteractionInWorkspace(interactionId: string) {
+    const [row] = await db
+      .select({ id: interactions.id })
+      .from(interactions)
+      .where(
+        and(
+          eq(interactions.id, interactionId),
+          eq(interactions.workspaceId, workspaceId),
+        ),
+      );
+    if (!row) throw new Error("Interaction not found");
+  }
+
+  /** URL fields only ever hold http(s) links — see safeHttpUrl. */
+  function sanitizeContactFields<T extends Partial<NewContact>>(data: T): T {
+    const out: Partial<NewContact> = { ...data };
+    if ("linkedinUrl" in out) out.linkedinUrl = safeHttpUrl(out.linkedinUrl);
+    if ("website" in out) out.website = safeHttpUrl(out.website);
+    return out as T;
+  }
 
   async function recomputeLastInteraction(contactIds: string[]) {
     if (contactIds.length === 0) return;
@@ -357,7 +399,7 @@ export function repoFor(workspaceId: string) {
     async createContact(data: NewContact) {
       const [row] = await db
         .insert(contacts)
-        .values({ ...data, workspaceId })
+        .values({ ...sanitizeContactFields(data), workspaceId })
         .returning();
       return row;
     },
@@ -367,6 +409,7 @@ export function repoFor(workspaceId: string) {
       data: Partial<NewContact>,
       actorUserId?: string,
     ) {
+      data = sanitizeContactFields(data);
       const [old] = await db
         .select()
         .from(contacts)
@@ -456,6 +499,7 @@ export function repoFor(workspaceId: string) {
      * on collision returns the existing interaction instead of creating.
      */
     async createInteraction(data: NewInteraction) {
+      await assertContactsInWorkspace(data.contactIds);
       const hash = sourceHash(data.rawSource);
 
       const [dupe] = await db
@@ -509,7 +553,13 @@ export function repoFor(workspaceId: string) {
       const linked = await db
         .select({ id: contacts.id, firstName: contacts.firstName, lastName: contacts.lastName })
         .from(interactionContacts)
-        .innerJoin(contacts, eq(contacts.id, interactionContacts.contactId))
+        .innerJoin(
+          contacts,
+          and(
+            eq(contacts.id, interactionContacts.contactId),
+            eq(contacts.workspaceId, workspaceId),
+          ),
+        )
         .where(eq(interactionContacts.interactionId, interactionId));
       return { ...row, contacts: linked };
     },
@@ -527,6 +577,7 @@ export function repoFor(workspaceId: string) {
     ) {
       const existing = await this.getInteraction(interactionId);
       if (!existing) return null;
+      if (data.contactIds) await assertContactsInWorkspace(data.contactIds);
 
       const affected = new Set(existing.contacts.map((c) => c.id));
       const fieldChanges: { field: string; oldValue: unknown; newValue: unknown }[] = [];
@@ -643,6 +694,9 @@ export function repoFor(workspaceId: string) {
       sourceInteractionId?: string | null;
       createdBy?: "user" | "ai";
     }) {
+      await assertContactsInWorkspace([data.contactId]);
+      if (data.sourceInteractionId)
+        await assertInteractionInWorkspace(data.sourceInteractionId);
       const [row] = await db
         .insert(memories)
         .values({
@@ -782,6 +836,7 @@ export function repoFor(workspaceId: string) {
       /** Set for the 30-day check-in spawned when an intro is sent. */
       introId?: string | null;
     }) {
+      await assertContactsInWorkspace([data.contactId]);
       const [row] = await db
         .insert(followUps)
         .values({
@@ -927,11 +982,15 @@ export function repoFor(workspaceId: string) {
     // ----------------------------------------------------------------- invites
 
     async createInvite(email: string, invitedByUserId: string) {
+      // Auth.js lowercases the address at sign-in; an invite stored with
+      // capitals would never match it and the invitee would be turned away.
+      const normalized = normalizeEmail(email);
+      if (!normalized) throw new Error("That doesn't look like an email address");
       const token = crypto.randomUUID().replace(/-/g, "");
       const [row] = await db
         .insert(invites)
         .values({
-          email,
+          email: normalized,
           token,
           invitedByUserId,
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),

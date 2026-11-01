@@ -9,12 +9,33 @@ import {
   renderDraftContext,
 } from "@/lib/drafting";
 
+// Upper bounds on free text arriving from a client. Nothing legitimate comes
+// close; they exist so a runaway or hostile client can't park megabytes in a
+// row (the transport caps the whole request body separately).
+const LIMITS = {
+  name: 200,
+  short: 500,
+  text: 5_000,
+  notes: 20_000,
+  rawSource: 200_000,
+  url: 2_048,
+  date: 40,
+  list: 50,
+} as const;
+const str = (max: number) => z.string().max(max);
+
+/** What the AI does once a proposal is staged, by the user's setting. */
+const applyStep = (autoApply: boolean) =>
+  autoApply
+    ? "then call apply_extraction immediately for everything non-blocked — this user has chosen to auto-apply, so don't pause for a review step."
+    : "and STOP there: this user reviews every proposal before it lands. Summarize what you staged (quote proposed memory texts), link the reviewUrl, and call apply_extraction only for items they explicitly approve in chat.";
+
 /**
  * The extraction contract, inlined for remote AI clients (claude.ai,
  * ChatGPT) that can't read mcp/EXTRACTION.md from the repo. Keep in sync
  * with that file and PROMPT_VERSION.
  */
-const EXTRACTION_RULES = `You are the extraction engine. Turn the raw interaction text into a PROPOSAL via submit_extraction_proposal, then call apply_extraction immediately for everything non-blocked — this user has a standing instruction to auto-approve, so don't pause for a review step. Blocked items (ambiguous bindings, proposed new contacts) still need a human call: surface them rather than guessing.
+const extractionRules = (autoApply: boolean) => `You are the extraction engine. Turn the raw interaction text into a PROPOSAL via submit_extraction_proposal, ${applyStep(autoApply)} Blocked items (ambiguous bindings, proposed new contacts) always need a human call: surface them rather than guessing.
 Proposal JSON shape:
 {
  "interaction": {"type"?, "occurred_at"?, "location"?, "summary"?},
@@ -36,20 +57,32 @@ Rules: NEVER guess between two plausible people — return status "ambiguous" wi
  * with the workspace owner's timezone. mcp/CLAUDE_PROJECT_INSTRUCTIONS.md
  * remains as optional reinforcement for clients that under-weight this field.
  */
-export function buildServerInstructions(opts: { timezone: string }): string {
+export function buildServerInstructions(opts: {
+  timezone: string;
+  /** Settings → "AI extraction". Defaults on; see lib/user-settings.ts. */
+  autoApply?: boolean;
+}): string {
+  const autoApply = opts.autoApply ?? true;
+  const processCaptures = autoApply
+    ? "For every pending item, run the full pipeline (get_extraction_context → submit_extraction_proposal → apply_extraction) automatically — this user has chosen to auto-apply everything non-blocked, so don't pause for confirmation. Still surface blocking items (ambiguous bindings, proposed new contacts) rather than guessing through them, and tell the user what was applied."
+    : "For every pending item, run get_extraction_context → submit_extraction_proposal, then STOP: this user reviews every proposal before it lands. Summarize what you staged (quote the proposed memory texts), give the review link, and call apply_extraction only for items they explicitly approve in chat.";
+  const captureStep3 = autoApply
+    ? "Immediately (no need to ask) get_extraction_context, follow its instructions field exactly, submit_extraction_proposal, then apply_extraction for everything non-blocked — this user auto-applies by choice, don't wait for chat confirmation."
+    : "Immediately (no need to ask) get_extraction_context, follow its instructions field exactly, submit_extraction_proposal, then stop and show what you proposed — this user approves on the web review screen or by saying so in chat. Never call apply_extraction unprompted.";
+
   return `This is the user's personal relationship CRM. You are its interface: capture interactions accurately, retrieve context on request, and never write bad data. Precision beats speed — ask instead of guessing.
 
 DATES: The user's timezone is ${opts.timezone}. Resolve every relative date ("yesterday", "last Tuesday") against the actual current date in that timezone, to ISO 8601, before calling any tool. No stated date = assume today and say so. Genuinely ambiguous = ask.
 
-PROACTIVELY PROCESS CAPTURES — don't wait to be asked. At the start of any conversation, and again right after logging anything, call list_pending_captures. For every pending item, run the full pipeline (get_extraction_context → submit_extraction_proposal → apply_extraction) automatically — this user has a standing instruction to auto-approve everything non-blocked, so don't pause for confirmation. Still surface blocking items (ambiguous bindings, proposed new contacts) rather than guessing through them, and tell the user what was applied.
+PROACTIVELY PROCESS CAPTURES — don't wait to be asked. At the start of any conversation, and again right after logging anything, call list_pending_captures. ${processCaptures}
 
 PASTED SENT MESSAGES CLOSE LOOPS. Screenshots and pasted text of a message the user already SENT are the most common capture. Log it like any interaction, and in the same extraction propose completing the follow-up it satisfies (completed_follow_ups). Tell the user plainly that the follow-up will close when they approve. Never leave them owing something they have shown you they already did.
 
 CAPTURING (when the user describes a conversation or pastes notes):
 1. search_contacts to identify who was PRESENT — never invent contact ids.
 2. log_interaction: rawSource = the user's words VERBATIM (never summarized or cleaned up), resolved occurredAt, inferred type, location if mentioned, contactIds of present people only.
-3. Immediately (no need to ask) get_extraction_context, follow its instructions field exactly, submit_extraction_proposal, then apply_extraction for everything non-blocked — this user auto-approves by standing instruction, don't wait for chat confirmation.
-4. Report concisely what was applied.
+3. ${captureStep3}
+4. Report concisely what was applied${autoApply ? "" : " or staged"}.
 5. Blocking items (ambiguous names, proposed new contacts) still need the user's call — surface them rather than guessing, and mention the review link for anything left unresolved.
 
 DUPLICATE CONTACTS: before creating anyone, search_contacts for their name — create_contact also hard-blocks likely duplicates and returns candidates; ask the user "same person?" and reuse the existing record unless they confirm it's someone new (then retry with force: true). find_duplicate_contacts scans for existing duplicate pairs on request. When a pair IS the same person, merge_contacts consolidates them — but only ever after the user confirms both that it's one person and which record to keep; a name match is never enough on its own. Never merge people who merely share a name. After merging, refresh_contact_summary for the survivor.
@@ -84,7 +117,9 @@ export function registerCrmTools(
   server: McpServer,
   repo: Repo,
   actorUserId: string,
+  opts: { autoApply?: boolean } = {},
 ) {
+  const autoApply = opts.autoApply ?? true;
   const json = (data: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
   });
@@ -106,13 +141,13 @@ export function registerCrmTools(
       description:
         "Search contacts in the workspace. All filters optional.",
       inputSchema: {
-        q: z.string().optional().describe("Free text across names, notes, memories, company"),
-        location: z.string().optional(),
-        company: z.string().optional(),
-        relationshipCategory: z.string().optional(),
+        q: str(LIMITS.name).optional().describe("Free text across names, notes, memories, company"),
+        location: str(LIMITS.name).optional(),
+        company: str(LIMITS.name).optional(),
+        relationshipCategory: str(LIMITS.name).optional(),
         hasOpenFollowUps: z.boolean().optional(),
-        lastInteractionBefore: z.string().optional().describe("ISO date — dormancy queries: contacts not spoken to since"),
-        lastInteractionAfter: z.string().optional().describe("ISO date"),
+        lastInteractionBefore: str(LIMITS.date).optional().describe("ISO date — dormancy queries: contacts not spoken to since"),
+        lastInteractionAfter: str(LIMITS.date).optional().describe("ISO date"),
       },
     },
     async (args) => {
@@ -181,20 +216,20 @@ export function registerCrmTools(
       description:
         "Create a new contact. Blocks with a possibleDuplicates list when a similar contact already exists — confirm with the user before retrying with force: true.",
       inputSchema: {
-        firstName: z.string(),
-        lastName: z.string().optional(),
-        preferredName: z.string().optional(),
-        emails: z.array(z.string()).optional(),
-        phone: z.string().optional(),
-        currentCompany: z.string().optional(),
-        currentRole: z.string().optional(),
-        location: z.string().optional(),
-        linkedinUrl: z.string().optional(),
-        website: z.string().optional(),
-        howWeMet: z.string().optional(),
-        dateFirstMet: z.string().optional().describe("YYYY-MM-DD"),
-        relationshipCategory: z.string().optional(),
-        notes: z.string().optional(),
+        firstName: str(LIMITS.name).min(1),
+        lastName: str(LIMITS.name).optional(),
+        preferredName: str(LIMITS.name).optional(),
+        emails: z.array(str(254)).max(20).optional(),
+        phone: str(50).optional(),
+        currentCompany: str(LIMITS.name).optional(),
+        currentRole: str(LIMITS.name).optional(),
+        location: str(LIMITS.name).optional(),
+        linkedinUrl: str(LIMITS.url).optional().describe("http(s) only; anything else is dropped"),
+        website: str(LIMITS.url).optional().describe("http(s) only; anything else is dropped"),
+        howWeMet: str(LIMITS.text).optional(),
+        dateFirstMet: str(LIMITS.date).optional().describe("YYYY-MM-DD"),
+        relationshipCategory: str(LIMITS.name).optional(),
+        notes: str(LIMITS.notes).optional(),
         force: z
           .boolean()
           .default(false)
@@ -243,12 +278,12 @@ export function registerCrmTools(
       description:
         "Persist an interaction (raw notes stored verbatim, persist-first). Detects duplicate pastes by content hash — if duplicate, returns the existing interaction instead of creating.",
       inputSchema: {
-        rawSource: z.string().describe("The raw notes/transcript — stored immutably"),
-        occurredAt: z.string().describe("ISO datetime the interaction happened"),
+        rawSource: str(LIMITS.rawSource).min(1).describe("The raw notes/transcript — stored immutably"),
+        occurredAt: str(LIMITS.date).describe("ISO datetime the interaction happened"),
         type: z.enum(interactionType.enumValues).default("other"),
         sourceType: z.enum(sourceType.enumValues).default("manual_note"),
-        location: z.string().optional(),
-        contactIds: z.array(z.string().uuid()).describe("Contacts who were present"),
+        location: str(LIMITS.name).optional(),
+        contactIds: z.array(z.string().uuid()).max(LIMITS.list).describe("Contacts who were present"),
       },
     },
     async (args) => {
@@ -310,7 +345,7 @@ export function registerCrmTools(
     async ({ interactionId }) => {
       const context = await repo.getExtractionContext(interactionId);
       if (!context) return json({ error: "Interaction not found" });
-      return json({ ...context, instructions: EXTRACTION_RULES });
+      return json({ ...context, instructions: extractionRules(autoApply) });
     },
   );
 
@@ -325,7 +360,7 @@ export function registerCrmTools(
         proposal: z
           .record(z.string(), z.unknown())
           .describe("Proposal JSON per the extraction instructions"),
-        model: z.string().default("ai-via-mcp").describe("Your model id"),
+        model: str(100).default("ai-via-mcp").describe("Your model id"),
       },
     },
     async ({ interactionId, proposal, model }) => {
@@ -365,8 +400,11 @@ export function registerCrmTools(
   server.registerTool(
     "apply_extraction",
     {
-      description:
-        "Apply an approved subset of a staged proposal — ONLY after the user has explicitly approved the items in chat. Selections use array indices from the proposal; binding_resolutions maps each ambiguous/new mention to a contact UUID, 'create', or 'skip'. Every change is revision-logged under a batch id; undo is always available.",
+      description: `${
+        autoApply
+          ? "Apply a staged proposal. This user auto-applies: call it right after submit_extraction_proposal for everything non-blocked."
+          : "Apply an approved subset of a staged proposal — ONLY after the user has explicitly approved the items in chat."
+      } Selections use array indices from the proposal; binding_resolutions maps each ambiguous/new mention to a contact UUID, 'create', or 'skip'. Every change is revision-logged under a batch id; undo is always available.`,
       inputSchema: {
         extractionId: z.string().uuid(),
         selections: z
@@ -506,9 +544,9 @@ export function registerCrmTools(
         "Attach a structured memory (fact) to a contact. eventDate is when the thing happens/happened, resolved to an absolute date.",
       inputSchema: {
         contactId: z.string().uuid(),
-        text: z.string(),
+        text: str(LIMITS.text).min(1),
         category: z.enum(memoryCategory.enumValues).default("other"),
-        eventDate: z.string().optional().describe("YYYY-MM-DD"),
+        eventDate: str(LIMITS.date).optional().describe("YYYY-MM-DD"),
         eventDatePrecision: z.enum(["exact", "month", "quarter", "year", "none"]).default("none"),
         sourceInteractionId: z.string().uuid().optional(),
       },
@@ -564,9 +602,9 @@ export function registerCrmTools(
       description: "Create a follow-up for a contact. reason is required — always explain why.",
       inputSchema: {
         contactId: z.string().uuid(),
-        description: z.string(),
-        reason: z.string(),
-        dueDate: z.string().optional().describe("YYYY-MM-DD"),
+        description: str(LIMITS.text).min(1),
+        reason: str(LIMITS.text).min(1),
+        dueDate: str(LIMITS.date).optional().describe("YYYY-MM-DD"),
         priority: z.enum(["low", "medium", "high"]).default("medium"),
       },
     },
@@ -597,10 +635,9 @@ export function registerCrmTools(
         "Edit an existing follow-up in place: change its due date, description, reason, priority, or status. Use this to reschedule — never complete and recreate a follow-up just to change a field, because that abandons any message draft attached to it. Setting status to 'open' reopens one that was completed or dismissed by mistake. Only the fields you pass are changed.",
       inputSchema: {
         followUpId: z.string().uuid(),
-        description: z.string().optional(),
-        reason: z.string().optional(),
-        dueDate: z
-          .string()
+        description: str(LIMITS.text).optional(),
+        reason: str(LIMITS.text).optional(),
+        dueDate: str(LIMITS.date)
           .nullable()
           .optional()
           .describe(
@@ -647,20 +684,18 @@ export function registerCrmTools(
           .uuid()
           .describe("The side the 30-day check-in follow-up will point at"),
         personBContactId: z.string().uuid(),
-        reason: z
-          .string()
+        reason: str(LIMITS.text)
+          .min(1)
           .describe("Why these two should know each other, in the user's words"),
         channel: z
           .enum(["text", "slack", "teams", "email", "other"])
           .optional(),
-        channelLabel: z.string().optional(),
-        aOptedInAt: z
-          .string()
+        channelLabel: str(100).optional(),
+        aOptedInAt: str(LIMITS.date)
           .optional()
           .describe("ISO datetime — only if person A has actually said yes"),
-        bOptedInAt: z.string().optional(),
-        sentAt: z
-          .string()
+        bOptedInAt: str(LIMITS.date).optional(),
+        sentAt: str(LIMITS.date)
           .optional()
           .describe(
             "ISO datetime. Back-fill only: sets status to sent and spawns the 30-day check-in",
@@ -707,8 +742,7 @@ export function registerCrmTools(
           .string()
           .uuid()
           .describe("Which of the two people said yes"),
-        optedInAt: z
-          .string()
+        optedInAt: str(LIMITS.date)
           .optional()
           .describe("ISO datetime of the yes. Defaults to now."),
       },
@@ -738,11 +772,11 @@ export function registerCrmTools(
         "Record that the intro actually went out. Refuses unless both sides opted in BEFORE the send time. If it genuinely went out without asking, retry with force: true — it still gets recorded, it just won't count toward the double opt-in rate. Spawns a 30-day check-in follow-up automatically; you never need to create that yourself.",
       inputSchema: {
         introId: z.string().uuid(),
-        sentAt: z.string().optional().describe("ISO datetime. Defaults to now."),
+        sentAt: str(LIMITS.date).optional().describe("ISO datetime. Defaults to now."),
         channel: z
           .enum(["text", "slack", "teams", "email", "other"])
           .optional(),
-        channelLabel: z.string().optional(),
+        channelLabel: str(100).optional(),
         introInteractionId: z
           .string()
           .uuid()
@@ -798,8 +832,7 @@ export function registerCrmTools(
           "opportunity",
           "unknown",
         ]),
-        note: z
-          .string()
+        note: str(LIMITS.text)
           .optional()
           .describe("What happened, in the user's words"),
       },
@@ -862,8 +895,8 @@ export function registerCrmTools(
         awaitingOptIn: z.boolean().optional(),
         sentWithoutOutcome: z.boolean().optional(),
         contactId: z.string().uuid().optional(),
-        sentFrom: z.string().optional().describe("ISO date"),
-        sentTo: z.string().optional().describe("ISO date"),
+        sentFrom: str(LIMITS.date).optional().describe("ISO date"),
+        sentTo: str(LIMITS.date).optional().describe("ISO date"),
       },
     },
     async (args) => {
@@ -993,9 +1026,8 @@ export function registerCrmTools(
         "Write the drafted message back. Body must be the message text ONLY — no preamble, no alternatives, no commentary; it is pasted as-is. This does not send anything.",
       inputSchema: {
         draftId: z.string().uuid(),
-        body: z.string(),
-        subject: z
-          .string()
+        body: str(LIMITS.notes).min(1),
+        subject: str(LIMITS.short)
           .optional()
           .describe("Email only — required when the channel is email"),
       },
@@ -1038,12 +1070,10 @@ export function registerCrmTools(
       inputSchema: {
         followUpId: z.string().uuid(),
         channel: z.enum(["text", "slack", "teams", "email", "other"]),
-        channelLabel: z
-          .string()
+        channelLabel: str(100)
           .optional()
           .describe('Required when channel is "other", e.g. "LinkedIn DM"'),
-        instruction: z
-          .string()
+        instruction: str(LIMITS.text)
           .optional()
           .describe(
             'How this draft should differ, e.g. "shorter" or "mention the new notes"',

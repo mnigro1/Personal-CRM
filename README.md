@@ -79,6 +79,16 @@ Existing `type = 'intro'` interactions are **not** backfilled automatically —
 that would invent opt-in history. `npx tsx scripts/list-intro-interactions.ts`
 lists them with a suggested `log_intro` call so you can decide case by case.
 
+## Security notes
+
+- **Production needs an email provider** (`GMAIL_USER` + `GMAIL_APP_PASSWORD`, or `RESEND_API_KEY` + `EMAIL_FROM`). Without one, sign-in refuses to send rather than log a live magic link. Links expire after an hour.
+- **Abuse limits** (Postgres-backed, `src/db/rate-limit.ts`): magic-link requests are capped per email (5 / 15 min) and per IP (20 / 15 min); the hosted MCP endpoint per token (300 / min) and per IP for bad tokens (20 / min). Limits fail open if the database is unreachable.
+- **Tenant isolation**: every query is scoped by `workspace_id` through `repoFor`; ids a client sends (contact, interaction) are verified against the workspace before they are linked to anything.
+- **URL fields** are restricted to http(s) at write time and again at render, so a pasted `javascript:` link can never become a clickable one.
+- **Headers**: a static Content-Security-Policy (no framing, no plugins, same-origin forms), `nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS — set in `next.config.ts`.
+- **Settings → AI extraction** lets each user choose whether their AI applies extraction proposals automatically or holds them for review. Hold-for-review is the safer choice for anyone who pastes in text written by other people.
+- **Connector tokens** are shown once, stored as SHA-256 hashes, revocable in Settings. The token travels in the connector URL because claude.ai/ChatGPT custom connectors can't send headers — treat the URL as a password.
+
 ## Tests
 
 `npm test` — unit tests always run; integration tests (workspace isolation,

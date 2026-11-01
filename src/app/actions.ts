@@ -1,12 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { users } from "@/db/schema";
 import { repoFor, type NewContact, type NewInteraction } from "@/db/repo";
 import type { SentOutcome } from "@/db/repo-drafts";
+import { updateUserSettings, updateUserTimezone } from "@/db/users";
+import { NEW_MCP_TOKEN_COOKIE } from "@/lib/cookies";
+import { zonedLocalToUtc } from "@/lib/dates";
 import { CHANNELS, type Channel } from "@/lib/drafting";
 import { requireSession } from "@/lib/session";
 
@@ -116,7 +117,7 @@ export async function deleteContactAction(contactId: string) {
 // --------------------------------------------------------------- interactions
 
 export async function createInteractionAction(formData: FormData) {
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
 
   const rawSource = str(formData, "rawSource");
@@ -126,7 +127,10 @@ export async function createInteractionAction(formData: FormData) {
 
   const result = await repo.createInteraction({
     type: (str(formData, "type") ?? "other") as NewInteraction["type"],
-    occurredAt: occurredAtRaw ? new Date(occurredAtRaw) : new Date(),
+    // The picker gives a wall-clock time with no zone; it means the user's.
+    occurredAt:
+      (occurredAtRaw && zonedLocalToUtc(occurredAtRaw, user.timezone)) ||
+      new Date(),
     location: str(formData, "location"),
     rawSource,
     sourceType: (str(formData, "sourceType") ??
@@ -147,12 +151,14 @@ export async function updateInteractionAction(
   interactionId: string,
   formData: FormData,
 ) {
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const occurredAtRaw = str(formData, "occurredAt");
   await repo.updateInteractionMeta(interactionId, {
     type: (str(formData, "type") ?? "other") as NewInteraction["type"],
-    occurredAt: occurredAtRaw ? new Date(occurredAtRaw) : undefined,
+    occurredAt:
+      (occurredAtRaw && zonedLocalToUtc(occurredAtRaw, user.timezone)) ||
+      undefined,
     location: str(formData, "location"),
     contactIds: formData.getAll("contactIds").map(String).filter(Boolean),
   });
@@ -379,11 +385,19 @@ export async function createInviteAction(formData: FormData) {
 export async function createMcpTokenAction(formData: FormData) {
   const { user } = await requireSession();
   const { createMcpToken } = await import("@/db/tokens");
-  const label = str(formData, "label") ?? "My AI";
+  const label = (str(formData, "label") ?? "My AI").slice(0, 100);
   const token = await createMcpToken(user.id, label);
   revalidatePath("/settings");
-  // The token is shown once, as part of the connector URL it belongs in.
-  redirect(`/settings?newToken=${encodeURIComponent(token)}`);
+  // Shown once on the Settings page, carried there in a short-lived cookie
+  // rather than the URL so the credential stays out of history and logs.
+  (await cookies()).set(NEW_MCP_TOKEN_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/settings",
+    maxAge: 120,
+  });
+  redirect("/settings");
 }
 
 export async function revokeMcpTokenAction(tokenId: string) {
@@ -403,28 +417,38 @@ export async function updateVoiceAction(formData: FormData) {
   const emoji = str(formData, "emoji");
   // Textareas submit CRLF per the HTML spec. Left alone, every stored
   // profile carries stray \r into the prompt.
-  const text = (key: string) => str(formData, key)?.replace(/\r\n/g, "\n") ?? null;
-  const existing =
-    user.settingsJson && typeof user.settingsJson === "object"
-      ? (user.settingsJson as Record<string, unknown>)
-      : {};
-  await db
-    .update(users)
-    .set({
-      settingsJson: {
-        ...existing,
-        drafting: {
-          ...((existing.drafting as Record<string, unknown>) ?? {}),
-          voice: text("voice"),
-          signOff: text("signOff"),
-          emoji:
-            emoji === "sparingly" || emoji === "yes" ? emoji : "never",
-        },
-      },
-    })
-    .where(eq(users.id, user.id));
+  const text = (key: string) =>
+    str(formData, key)?.replace(/\r\n/g, "\n").slice(0, 20_000) ?? null;
+  await updateUserSettings(user.id, (existing) => ({
+    ...existing,
+    drafting: {
+      ...((existing.drafting as Record<string, unknown>) ?? {}),
+      voice: text("voice"),
+      signOff: text("signOff"),
+      emoji: emoji === "sparingly" || emoji === "yes" ? emoji : "never",
+    },
+  }));
   revalidatePath("/settings");
   redirect("/settings?voiceSaved=1");
+}
+
+/**
+ * Whether the connected AI applies extraction proposals on its own or waits
+ * for review. Takes effect in the AI's next conversation — claude.ai reads
+ * the server instructions once, when a chat starts.
+ */
+export async function updateExtractionSettingsAction(formData: FormData) {
+  const { user } = await requireSession();
+  const autoApply = str(formData, "autoApply") === "yes";
+  await updateUserSettings(user.id, (existing) => ({
+    ...existing,
+    extraction: {
+      ...((existing.extraction as Record<string, unknown>) ?? {}),
+      autoApply,
+    },
+  }));
+  revalidatePath("/settings");
+  redirect("/settings?extractionSaved=1");
 }
 
 /** Relationship goals. Lives beside `drafting` in the same settings blob. */
@@ -434,22 +458,13 @@ export async function updateGoalsAction(formData: FormData) {
   if (!Number.isInteger(raw) || raw < 0 || raw > 100) {
     throw new Error("Intros per month must be a whole number between 0 and 100");
   }
-  const existing =
-    user.settingsJson && typeof user.settingsJson === "object"
-      ? (user.settingsJson as Record<string, unknown>)
-      : {};
-  await db
-    .update(users)
-    .set({
-      settingsJson: {
-        ...existing,
-        goals: {
-          ...((existing.goals as Record<string, unknown>) ?? {}),
-          introsPerMonth: raw,
-        },
-      },
-    })
-    .where(eq(users.id, user.id));
+  await updateUserSettings(user.id, (existing) => ({
+    ...existing,
+    goals: {
+      ...((existing.goals as Record<string, unknown>) ?? {}),
+      introsPerMonth: raw,
+    },
+  }));
   revalidatePath("/settings");
   redirect("/settings?goalsSaved=1");
 }
@@ -463,7 +478,7 @@ export async function updateTimezoneAction(formData: FormData) {
   } catch {
     throw new Error(`Invalid IANA timezone: ${timezone}`);
   }
-  await db.update(users).set({ timezone }).where(eq(users.id, user.id));
+  await updateUserTimezone(user.id, timezone);
   revalidatePath("/settings");
 }
 

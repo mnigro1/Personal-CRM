@@ -20,6 +20,7 @@ import {
   type Selections,
   type StagedProposal,
 } from "@/lib/proposal";
+import { safeHttpUrl } from "@/lib/normalize";
 
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.85;
 
@@ -889,11 +890,18 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
               ),
             );
           if (!contact) continue;
+          // The extractor reads untrusted text; a URL it proposes is only
+          // ever stored if it's a real http(s) link.
+          const newValue =
+            u.field === "linkedin_url" || u.field === "website"
+              ? safeHttpUrl(u.new_value)
+              : u.new_value;
+          if (newValue === null) continue;
           const oldValue = contact[column] ?? null;
-          if (oldValue === u.new_value) continue;
+          if (oldValue === newValue) continue;
           await tx
             .update(contacts)
-            .set({ [column]: u.new_value, updatedAt: new Date() })
+            .set({ [column]: newValue, updatedAt: new Date() })
             .where(eq(contacts.id, contact.id));
           touchedContacts.add(contact.id);
           counts.fieldsUpdated++;
@@ -902,7 +910,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             entityId: contact.id,
             field: u.field,
             oldValue,
-            newValue: u.new_value,
+            newValue,
           });
           if (oldValue) {
             const label = u.field.replace(/_/g, " ");
@@ -1040,16 +1048,16 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
           const [row] = await tx
             .select({ contactId: memories.contactId })
             .from(memories)
-            .where(eq(memories.id, r.entityId));
+            .where(and(eq(memories.id, r.entityId), eq(memories.workspaceId, workspaceId)));
           if (!row) return false;
-          await tx.delete(memories).where(eq(memories.id, r.entityId));
+          await tx.delete(memories).where(and(eq(memories.id, r.entityId), eq(memories.workspaceId, workspaceId)));
           touchedContacts.add(row.contactId);
           return true;
         }
         const [row] = await tx
           .select()
           .from(memories)
-          .where(eq(memories.id, r.entityId));
+          .where(and(eq(memories.id, r.entityId), eq(memories.workspaceId, workspaceId)));
         if (!row) return false;
         touchedContacts.add(row.contactId);
         if (r.field === "supersession") {
@@ -1061,7 +1069,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
               supersededByMemoryId:
                 (old?.superseded_by_memory_id as string | null) ?? null,
             })
-            .where(eq(memories.id, r.entityId));
+            .where(and(eq(memories.id, r.entityId), eq(memories.workspaceId, workspaceId)));
           return true;
         }
         if (r.field === "last_confirmed_at") {
@@ -1070,7 +1078,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             .set({
               lastConfirmedAt: old ? new Date(old as unknown as string) : null,
             })
-            .where(eq(memories.id, r.entityId));
+            .where(and(eq(memories.id, r.entityId), eq(memories.workspaceId, workspaceId)));
           return true;
         }
         return false;
@@ -1083,14 +1091,14 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
           const [row] = await tx
             .select({ contactId: followUps.contactId, status: followUps.status })
             .from(followUps)
-            .where(eq(followUps.id, r.entityId));
+            .where(and(eq(followUps.id, r.entityId), eq(followUps.workspaceId, workspaceId)));
           if (!row) return false;
           // Someone may have reopened or re-closed it since; don't fight them.
           if (row.status !== "completed") return false;
           await tx
             .update(followUps)
             .set({ status: "open", completedAt: null })
-            .where(eq(followUps.id, r.entityId));
+            .where(and(eq(followUps.id, r.entityId), eq(followUps.workspaceId, workspaceId)));
           touchedContacts.add(row.contactId);
           return true;
         }
@@ -1098,9 +1106,9 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         const [row] = await tx
           .select({ contactId: followUps.contactId })
           .from(followUps)
-          .where(eq(followUps.id, r.entityId));
+          .where(and(eq(followUps.id, r.entityId), eq(followUps.workspaceId, workspaceId)));
         if (!row) return false;
-        await tx.delete(followUps).where(eq(followUps.id, r.entityId));
+        await tx.delete(followUps).where(and(eq(followUps.id, r.entityId), eq(followUps.workspaceId, workspaceId)));
         touchedContacts.add(row.contactId);
         return true;
       }
@@ -1110,7 +1118,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
           await tx
             .update(contacts)
             .set({ deletedAt: new Date() })
-            .where(eq(contacts.id, r.entityId));
+            .where(and(eq(contacts.id, r.entityId), eq(contacts.workspaceId, workspaceId)));
           touchedContacts.add(r.entityId);
           return true;
         }
@@ -1121,7 +1129,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         await tx
           .update(contacts)
           .set({ [column]: r.oldValue as string | null, updatedAt: new Date() })
-          .where(eq(contacts.id, r.entityId));
+          .where(and(eq(contacts.id, r.entityId), eq(contacts.workspaceId, workspaceId)));
         touchedContacts.add(r.entityId);
         return true;
       }
@@ -1134,6 +1142,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             and(
               eq(interactionContacts.interactionId, r.entityId),
               eq(interactionContacts.contactId, contactId),
+              eq(interactionContacts.workspaceId, workspaceId),
             ),
           );
         touchedContacts.add(contactId);
@@ -1156,7 +1165,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
         await tx
           .update(interactions)
           .set({ [column]: value })
-          .where(eq(interactions.id, r.entityId));
+          .where(and(eq(interactions.id, r.entityId), eq(interactions.workspaceId, workspaceId)));
         return true;
       }
       default:

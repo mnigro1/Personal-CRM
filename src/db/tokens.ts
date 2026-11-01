@@ -46,6 +46,7 @@ export async function resolveMcpToken(token: string) {
       userId: users.id,
       userEmail: users.email,
       timezone: users.timezone,
+      settingsJson: users.settingsJson,
       workspaceId: workspaces.id,
       workspaceName: workspaces.name,
     })

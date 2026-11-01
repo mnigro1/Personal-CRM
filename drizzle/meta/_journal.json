@@ -50,6 +50,13 @@
       "when": 1786546358802,
       "tag": "0006_lethal_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793491880534,
+      "tag": "0007_rate_limits",
+      "breakpoints": true
     }
   ]
 }

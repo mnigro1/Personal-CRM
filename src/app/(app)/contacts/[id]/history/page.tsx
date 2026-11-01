@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { repoFor } from "@/db/repo";
 import type { revisions } from "@/db/schema";
+import { formatDate, formatDateTime } from "@/lib/dates";
 import { requireSession } from "@/lib/session";
 
 type Revision = typeof revisions.$inferSelect;
@@ -65,7 +66,7 @@ export default async function ContactHistoryPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const contact = await repo.getContact(id);
   if (!contact) notFound();
@@ -152,7 +153,7 @@ export default async function ContactHistoryPage({
               <p className="text-xs text-muted-foreground">
                 {f.reason} · {f.status}
                 {f.completedAt &&
-                  ` · ${new Date(f.completedAt).toLocaleDateString()}`}
+                  ` · ${formatDate(f.completedAt, user.timezone)}`}
               </p>
             </div>
           ))}
@@ -178,7 +179,7 @@ export default async function ContactHistoryPage({
                 className="flex items-baseline gap-2 border-b py-1.5 text-sm last:border-b-0"
               >
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {new Date(r.createdAt).toLocaleString()}
+                  {formatDateTime(r.createdAt, user.timezone)}
                 </span>
                 <Badge
                   variant={r.changeSource === "undo" ? "outline" : "secondary"}

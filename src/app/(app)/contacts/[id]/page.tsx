@@ -20,6 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { repoFor } from "@/db/repo";
 import { memoryCategory } from "@/db/schema";
+import { formatDate } from "@/lib/dates";
+import { safeHttpUrl } from "@/lib/normalize";
 import { requireSession } from "@/lib/session";
 
 export default async function ContactPage({
@@ -32,7 +34,7 @@ export default async function ContactPage({
   const { id } = await params;
   const { history } = await searchParams;
   const showHistory = history === "1";
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const contact = await repo.getContact(id);
   // A merged-away record still resolves: send old links to the survivor
@@ -58,6 +60,9 @@ export default async function ContactPage({
     byCategory.set(m.category, list);
   }
   const openFollowUps = contact.followUps.filter((f) => f.status === "open");
+  // Stored values are sanitized on write; re-checking on render covers rows
+  // that predate that.
+  const linkedinUrl = safeHttpUrl(contact.linkedinUrl);
 
   return (
     <div className="space-y-6">
@@ -73,14 +78,12 @@ export default async function ContactPage({
           </p>
         </div>
         <div className="flex gap-2">
-          {contact.linkedinUrl && (
+          {linkedinUrl && (
             <Button
               nativeButton={false}
               variant="outline"
               size="sm"
-              render={
-                <a href={contact.linkedinUrl} target="_blank" rel="noreferrer" />
-              }
+              render={<a href={linkedinUrl} target="_blank" rel="noreferrer" />}
             >
               LinkedIn
             </Button>
@@ -113,7 +116,7 @@ export default async function ContactPage({
             <p className="text-xs text-muted-foreground">
               AI snapshot
               {contact.aiSummaryGeneratedAt &&
-                ` · ${new Date(contact.aiSummaryGeneratedAt).toLocaleDateString()}`}
+                ` · ${formatDate(contact.aiSummaryGeneratedAt, user.timezone)}`}
               {contact.aiSummaryStale && " · outdated — refreshes next time you chat"}
             </p>
           </CardContent>
@@ -308,7 +311,7 @@ export default async function ContactPage({
               <summary className="cursor-pointer text-sm">
                 <span className="font-medium">{i.type}</span>
                 {" · "}
-                {new Date(i.occurredAt).toLocaleDateString()}
+                {formatDate(i.occurredAt, user.timezone)}
                 {i.location ? ` · ${i.location}` : ""}
                 <Link href={`/interactions/${i.id}`} className="ml-2 text-xs text-muted-foreground hover:underline">
                   open

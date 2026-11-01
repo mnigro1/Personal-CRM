@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { deleteInteractionAction } from "@/app/actions";
 import { repoFor } from "@/db/repo";
+import { formatDateTime } from "@/lib/dates";
 import { requireSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { ClickableRow } from "@/components/clickable-row";
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/table";
 
 export default async function InteractionsPage() {
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const rows = await repoFor(workspace.id).listInteractions();
 
   return (
@@ -50,7 +51,7 @@ export default async function InteractionsPage() {
               deleteAction={deleteInteractionAction.bind(null, i.id)}
               deleteMessage="Delete this interaction? Its raw notes will be permanently removed."
             >
-              <TableCell>{new Date(i.occurredAt).toLocaleString()}</TableCell>
+              <TableCell>{formatDateTime(i.occurredAt, user.timezone)}</TableCell>
               <TableCell>{i.type}</TableCell>
               <TableCell>{i.location}</TableCell>
               <TableCell className="max-w-md truncate text-sm text-muted-foreground">
