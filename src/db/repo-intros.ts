@@ -51,6 +51,25 @@ type BaseRepo = {
  * drift from the evidence, and recording an opt-in after the fact correctly
  * fails to rescue a non-compliant intro.
  */
+/**
+ * The `monthsBack` month keys ("YYYY-MM") ending at `currentMonth`, newest
+ * first. Pure month arithmetic on the key itself: stepping a Date back with
+ * setUTCMonth while labelling it in the user's timezone produced the same
+ * key twice whenever UTC and local time sat in different months (the last
+ * evening of a month in New York is already next month in UTC).
+ */
+export function monthKeysBack(currentMonth: string, monthsBack: number): string[] {
+  const [y0, m0] = currentMonth.split("-").map(Number);
+  const keys: string[] = [];
+  for (let n = 0; n < monthsBack; n++) {
+    const total = y0 * 12 + (m0 - 1) - n;
+    const y = Math.floor(total / 12);
+    const m = (total % 12) + 1;
+    keys.push(`${y}-${String(m).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
 export function isDoubleOptIn(intro: {
   aOptedInAt: Date | null;
   bOptedInAt: Date | null;
@@ -582,6 +601,12 @@ export function introOpsFor(workspaceId: string, base: BaseRepo) {
      * Goal tracking. Months are bucketed in the owner's timezone, not UTC,
      * or an intro sent late on the 31st lands in the wrong month.
      */
+    /**
+     * Progress against the intros-per-month goal. Months are the owner's
+     * calendar months: both the bucketing of each sent_at and the list of
+     * months walked back come from the same timezone-aware key, so a month
+     * can never appear twice (which double-counted everything in it).
+     */
     async getIntroStats(monthsBack = 12) {
       const [owner] = await db
         .select({ tz: users.timezone, settings: users.settingsJson })
@@ -621,11 +646,8 @@ export function introOpsFor(workspaceId: string, base: BaseRepo) {
       }
 
       // Walk back real calendar months so empty ones still appear as zero.
-      const now = new Date();
       const months: { month: string; sent: number; doubleOptIn: number; goal: number; metGoal: boolean }[] = [];
-      const cursor = new Date(now);
-      for (let n = 0; n < monthsBack; n++) {
-        const k = monthKey(cursor);
+      for (const k of monthKeysBack(monthKey(new Date()), monthsBack)) {
         const e = byMonth.get(k) ?? { sent: 0, doubleOptIn: 0 };
         months.push({
           month: k,
@@ -634,7 +656,6 @@ export function introOpsFor(workspaceId: string, base: BaseRepo) {
           goal: goalPerMonth,
           metGoal: e.sent >= goalPerMonth,
         });
-        cursor.setUTCMonth(cursor.getUTCMonth() - 1, 15);
       }
 
       const thisMonth = months[0];
