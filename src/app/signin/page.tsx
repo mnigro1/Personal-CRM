@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
@@ -11,6 +12,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+export const metadata: Metadata = { title: "Sign in" };
 
 // Auth.js sends every failure here as ?error=<type>. Each gets a sentence a
 // person can act on; the raw type name told them nothing.

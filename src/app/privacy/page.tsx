@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Privacy Policy · Personal CRM" };
+export const metadata = { title: "Privacy Policy" };
 
 const LAST_UPDATED = "November 1, 2026";
 
@@ -142,6 +142,7 @@ export default function PrivacyPage() {
       </section>
 
       <p className="text-xs text-muted-foreground">
+        <Link href="/" className="underline">Home</Link> ·{" "}
         <Link href="/terms" className="underline">Terms of Service</Link> ·{" "}
         <Link href="/signin" className="underline">Back to sign in</Link>
       </p>
