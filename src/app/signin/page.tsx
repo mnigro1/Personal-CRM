@@ -28,11 +28,11 @@ const FALLBACK_ERROR = "Something went wrong signing you in. Please try again.";
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; deleted?: string }>;
 }) {
   const session = await auth();
   if (session?.user) redirect("/");
-  const { error } = await searchParams;
+  const { error, deleted } = await searchParams;
   const message = error ? (ERROR_MESSAGES[error] ?? FALLBACK_ERROR) : null;
 
   return (
@@ -46,6 +46,14 @@ export default async function SignInPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {deleted === "1" && (
+            <p
+              role="status"
+              className="mb-4 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+            >
+              Your account and all of its data have been deleted.
+            </p>
+          )}
           {message && (
             <p
               role="alert"

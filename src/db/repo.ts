@@ -35,6 +35,7 @@ import { extractionOpsFor } from "@/db/repo-extraction";
 import { draftOpsFor } from "@/db/repo-drafts";
 import { mergeOpsFor } from "@/db/repo-merge";
 import { introOpsFor } from "@/db/repo-intros";
+import { exportOpsFor } from "@/db/repo-export";
 
 const camelToSnake = (s: string) =>
   s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -1014,6 +1015,7 @@ export function repoFor(workspaceId: string) {
     ...draftOpsFor(workspaceId, base),
     ...mergeOpsFor(workspaceId, base),
     ...introOpsFor(workspaceId, base),
+    ...exportOpsFor(workspaceId),
   };
 }
 

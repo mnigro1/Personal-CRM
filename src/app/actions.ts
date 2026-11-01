@@ -3,9 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { signOut } from "@/auth";
 import { repoFor, type NewContact, type NewInteraction } from "@/db/repo";
 import type { SentOutcome } from "@/db/repo-drafts";
-import { updateUserSettings, updateUserTimezone } from "@/db/users";
+import {
+  deleteUserAccount,
+  updateUserSettings,
+  updateUserTimezone,
+} from "@/db/users";
 import { NEW_MCP_TOKEN_COOKIE } from "@/lib/cookies";
 import { zonedLocalToUtc } from "@/lib/dates";
 import { CHANNELS, type Channel } from "@/lib/drafting";
@@ -480,6 +485,22 @@ export async function updateTimezoneAction(formData: FormData) {
   }
   await updateUserTimezone(user.id, timezone);
   revalidatePath("/settings");
+}
+
+/**
+ * Settings → Your data → Delete my account. Typing the word is the whole
+ * confirmation; there is no undo after this, so the browser's `pattern`
+ * check is repeated here rather than trusted.
+ */
+export async function deleteAccountAction(formData: FormData) {
+  const { user } = await requireSession();
+  if (str(formData, "confirm") !== "DELETE") {
+    throw new Error("Type DELETE to confirm");
+  }
+  await deleteUserAccount(user.id);
+  // The session row is already gone with the account; this clears the cookie
+  // and lands them on the sign-in page with a one-line confirmation.
+  await signOut({ redirectTo: "/signin?deleted=1" });
 }
 
 // ------------------------------------------------------------------- drafting

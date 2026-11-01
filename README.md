@@ -88,6 +88,7 @@ lists them with a suggested `log_intro` call so you can decide case by case.
 - **Headers**: a static Content-Security-Policy (no framing, no plugins, same-origin forms), `nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS — set in `next.config.ts`.
 - **Settings → AI extraction** lets each user choose whether their AI applies extraction proposals automatically or holds them for review. Hold-for-review is the safer choice for anyone who pastes in text written by other people.
 - **Connector tokens** are shown once, stored as SHA-256 hashes, revocable in Settings. The token travels in the connector URL because claude.ai/ChatGPT custom connectors can't send headers — treat the URL as a password.
+- **Your data is yours** (Settings → Your data): `/api/export` downloads the whole workspace as JSON — every table, soft-deleted and merged contacts included — or the live contacts as a CSV (`?format=csv`), 3 downloads per 10 minutes per user. "Delete my account" (type DELETE) hard-deletes everything the user owns in one transaction — workspace data, connector tokens, invites, sessions, sign-in tokens, the user row — then signs them out. No retention copy, no email; the AI connector stops working the instant it commits. That is the one hard delete in the codebase: `deleteUserAccount` in `src/db/users.ts`.
 
 ## Tests
 
