@@ -2,9 +2,24 @@ import { describe, expect, it } from "vitest";
 import {
   formatDate,
   formatDateTime,
+  formatDay,
   utcToZonedLocal,
   zonedLocalToUtc,
 } from "@/lib/dates";
+
+describe("formatDay", () => {
+  it("renders a stored calendar day without any timezone shift", () => {
+    expect(formatDay("2026-08-24")).toBe("Aug 24, 2026");
+    expect(formatDay("2026-01-01")).toBe("Jan 1, 2026");
+    expect(formatDay("2026-12-31")).toBe("Dec 31, 2026");
+  });
+
+  it("leaves anything that isn't a plain day alone", () => {
+    expect(formatDay(null)).toBe("");
+    expect(formatDay("")).toBe("");
+    expect(formatDay("2026-08")).toBe("2026-08");
+  });
+});
 
 describe("zonedLocalToUtc", () => {
   it("reads a datetime-local value as wall-clock time in the user's zone", () => {

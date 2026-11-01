@@ -83,6 +83,22 @@ export function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
+/**
+ * A calendar day stored as "YYYY-MM-DD" (due dates, event dates) shown as
+ * "Aug 24, 2026". No timezone is involved: a day is a day. Anything that
+ * isn't that shape comes back untouched.
+ */
+export function formatDay(isoDay: string | null | undefined): string {
+  if (!isoDay) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDay);
+  if (!m) return isoDay;
+  const [, y, mo, d] = m;
+  return new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d))).toLocaleDateString(
+    "en-US",
+    { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" },
+  );
+}
+
 /** "10/31/2026" in the user's zone. */
 export function formatDate(date: Date | string, timeZone: string): string {
   return new Date(date).toLocaleDateString("en-US", { timeZone });

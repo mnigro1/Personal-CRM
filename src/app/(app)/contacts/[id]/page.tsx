@@ -20,7 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { repoFor } from "@/db/repo";
 import { memoryCategory } from "@/db/schema";
-import { formatDate } from "@/lib/dates";
+import { NativeSelect } from "@/components/ui/native-select";
+import { formatDate, formatDay } from "@/lib/dates";
 import { safeHttpUrl } from "@/lib/normalize";
 import { requireSession } from "@/lib/session";
 
@@ -202,7 +203,7 @@ export default async function ContactPage({
                       <span>
                         {m.text}
                         {m.eventDate && (
-                          <span className="text-muted-foreground"> ({m.eventDate}{m.eventDatePrecision !== "exact" ? ` · ${m.eventDatePrecision}` : ""})</span>
+                          <span className="text-muted-foreground"> ({formatDay(m.eventDate)}{m.eventDatePrecision !== "exact" ? ` · ${m.eventDatePrecision}` : ""})</span>
                         )}
                       </span>
                       <form action={deleteMemoryAction.bind(null, contact.id, m.id)}>
@@ -217,14 +218,14 @@ export default async function ContactPage({
             ))}
             <form action={addMemoryAction.bind(null, contact.id)} className="space-y-2 border-t pt-3">
               <Textarea name="text" placeholder="Add a memory…" required rows={2} />
-              <div className="flex gap-2">
-                <select name="category" className="rounded border px-2 py-1 text-sm">
+              <div className="flex flex-wrap gap-2">
+                <NativeSelect name="category" aria-label="Category">
                   {memoryCategory.enumValues.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
-                </select>
-                <input type="date" name="eventDate" className="rounded border px-2 py-1 text-sm" title="Event date (when the thing happens)" />
-                <Button type="submit" size="sm">Add</Button>
+                </NativeSelect>
+                <Input type="date" name="eventDate" className="w-auto" title="Event date (when the thing happens)" />
+                <Button type="submit">Add</Button>
               </div>
             </form>
           </CardContent>
@@ -240,12 +241,15 @@ export default async function ContactPage({
               <p className="text-sm text-muted-foreground">Nothing open.</p>
             )}
             {openFollowUps.map((f) => (
-              <div key={f.id} className="flex items-start justify-between gap-2 text-sm">
-                <div>
+              <div
+                key={f.id}
+                className="flex flex-col gap-2 text-sm sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div className="min-w-0">
                   <p>{f.description}</p>
                   <p className="text-xs text-muted-foreground">
                     {f.reason}
-                    {f.dueDate ? ` · due ${f.dueDate}` : ""} · {f.priority}
+                    {f.dueDate ? ` · due ${formatDay(f.dueDate)}` : ""} · {f.priority} priority
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -273,14 +277,14 @@ export default async function ContactPage({
             <form action={addFollowUpAction.bind(null, contact.id)} className="space-y-2 border-t pt-3">
               <Input name="description" placeholder="Follow up on…" required />
               <Input name="reason" placeholder="Why?" />
-              <div className="flex gap-2">
-                <input type="date" name="dueDate" className="rounded border px-2 py-1 text-sm" />
-                <select name="priority" className="rounded border px-2 py-1 text-sm" defaultValue="medium">
+              <div className="flex flex-wrap gap-2">
+                <Input type="date" name="dueDate" className="w-auto" aria-label="Due date" />
+                <NativeSelect name="priority" defaultValue="medium" aria-label="Priority">
                   <option value="low">low</option>
                   <option value="medium">medium</option>
                   <option value="high">high</option>
-                </select>
-                <Button type="submit" size="sm">Add</Button>
+                </NativeSelect>
+                <Button type="submit">Add</Button>
               </div>
             </form>
           </CardContent>
@@ -309,7 +313,7 @@ export default async function ContactPage({
           {contact.interactions.map((i) => (
             <details key={i.id} className="rounded border p-3">
               <summary className="cursor-pointer text-sm">
-                <span className="font-medium">{i.type}</span>
+                <span className="font-medium capitalize">{i.type}</span>
                 {" · "}
                 {formatDate(i.occurredAt, user.timezone)}
                 {i.location ? ` · ${i.location}` : ""}

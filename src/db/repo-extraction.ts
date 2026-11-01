@@ -20,7 +20,7 @@ import {
   type Selections,
   type StagedProposal,
 } from "@/lib/proposal";
-import { safeHttpUrl } from "@/lib/normalize";
+import { decodeEntities, safeHttpUrl } from "@/lib/normalize";
 
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.85;
 
@@ -608,13 +608,13 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             .insert(contacts)
             .values({
               workspaceId,
-              firstName: nc.first_name,
-              lastName: nc.last_name,
-              currentCompany: nc.current_company,
-              currentRole: nc.current_role,
-              location: nc.location,
+              firstName: decodeEntities(nc.first_name),
+              lastName: nc.last_name && decodeEntities(nc.last_name),
+              currentCompany: nc.current_company && decodeEntities(nc.current_company),
+              currentRole: nc.current_role && decodeEntities(nc.current_role),
+              location: nc.location && decodeEntities(nc.location),
               relationshipCategory: nc.relationship_category,
-              howWeMet: nc.how_we_met,
+              howWeMet: nc.how_we_met && decodeEntities(nc.how_we_met),
             })
             .returning();
           mentionMap.set(mention, created.id);
@@ -734,7 +734,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             .values({
               workspaceId,
               contactId,
-              text: edit.text ?? m.text,
+              text: decodeEntities(edit.text ?? m.text),
               category: edit.category ?? m.category,
               eventDate: edit.event_date !== undefined ? edit.event_date : m.event_date ?? null,
               eventDatePrecision: m.event_date_precision,
@@ -825,8 +825,8 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             .values({
               workspaceId,
               contactId,
-              description: edit.description ?? f.description,
-              reason: f.reason,
+              description: decodeEntities(edit.description ?? f.description),
+              reason: decodeEntities(f.reason),
               dueDate: edit.due_date !== undefined ? edit.due_date : f.due_date ?? null,
               priority: f.priority,
               createdBy: "ai",
@@ -895,7 +895,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
           const newValue =
             u.field === "linkedin_url" || u.field === "website"
               ? safeHttpUrl(u.new_value)
-              : u.new_value;
+              : decodeEntities(u.new_value);
           if (newValue === null) continue;
           const oldValue = contact[column] ?? null;
           if (oldValue === newValue) continue;

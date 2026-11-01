@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { repoFor, type Repo } from "@/db/repo";
 import { connectionStatusFor } from "@/db/tokens";
+import { formatDay } from "@/lib/dates";
 import { voiceFor } from "@/lib/drafting";
 import { requireSession } from "@/lib/session";
 
@@ -363,7 +364,10 @@ function FollowUpGroup({
           </Link>
           <ul className="mt-1 space-y-2">
             {items.map(({ followUp: f, contact }) => (
-              <li key={f.id} className="flex items-start justify-between gap-3">
+              <li
+                key={f.id}
+                className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+              >
                 <div className="min-w-0">
                   <p className="text-sm">{f.description}</p>
                   <p className="text-xs text-muted-foreground">
@@ -377,7 +381,7 @@ function FollowUpGroup({
                           : "text-muted-foreground"
                       }
                     >
-                      due {f.dueDate}
+                      {f.dueDate ? `Due ${formatDay(f.dueDate)}` : "No date"}
                     </span>
                     {f.priority === "high" && (
                       <Badge variant="secondary" className="ml-2">high</Badge>

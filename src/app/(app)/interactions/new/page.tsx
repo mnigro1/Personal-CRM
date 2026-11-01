@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 
 export default async function NewInteractionPage({
@@ -37,19 +38,19 @@ export default async function NewInteractionPage({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1">
             <Label htmlFor="type">Type</Label>
-            <select id="type" name="type" className="w-full rounded border px-2 py-2 text-sm" defaultValue="meeting">
+            <NativeSelect id="type" name="type" className="w-full capitalize" defaultValue="meeting">
               {interactionType.enumValues.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
           <div className="space-y-1">
             <Label htmlFor="sourceType">Source</Label>
-            <select id="sourceType" name="sourceType" className="w-full rounded border px-2 py-2 text-sm" defaultValue="manual_note">
+            <NativeSelect id="sourceType" name="sourceType" className="w-full capitalize" defaultValue="manual_note">
               {sourceType.enumValues.map((t) => (
                 <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
           <div className="space-y-1">
             <Label htmlFor="occurredAt">When</Label>

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { repoFor } from "@/db/repo";
 import { listMcpTokens } from "@/db/tokens";
@@ -90,7 +91,7 @@ export default async function SettingsPage({
               <Label htmlFor="label">Name</Label>
               <Input id="label" name="label" placeholder="e.g. My Claude" required className="w-64" />
             </div>
-            <Button type="submit" size="sm">Create connector URL</Button>
+            <Button type="submit">Create connector URL</Button>
           </form>
           {tokens.length > 0 && (
             <ul className="space-y-2 text-sm">
@@ -136,17 +137,16 @@ export default async function SettingsPage({
           <form action={updateExtractionSettingsAction} className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label htmlFor="autoApply">Proposals are</Label>
-              <select
+              <NativeSelect
                 id="autoApply"
                 name="autoApply"
                 defaultValue={extraction.autoApply ? "yes" : "no"}
-                className="rounded border px-2 py-2 text-sm"
               >
                 <option value="yes">applied automatically</option>
                 <option value="no">held for my review</option>
-              </select>
+              </NativeSelect>
             </div>
-            <Button type="submit" size="sm">Save</Button>
+            <Button type="submit">Save</Button>
           </form>
           <p className="mt-3 text-xs text-muted-foreground">
             &ldquo;Held for my review&rdquo; is the safer choice if you paste
@@ -198,18 +198,17 @@ export default async function SettingsPage({
               </div>
               <div className="space-y-1">
                 <Label htmlFor="emoji">Emoji</Label>
-                <select
+                <NativeSelect
                   id="emoji"
                   name="emoji"
                   defaultValue={voice.emoji ?? "never"}
-                  className="rounded border px-2 py-2 text-sm"
                 >
                   <option value="never">never</option>
                   <option value="sparingly">sparingly</option>
                   <option value="yes">yes</option>
-                </select>
+                </NativeSelect>
               </div>
-              <Button type="submit" size="sm">Save voice</Button>
+              <Button type="submit">Save voice</Button>
             </div>
           </form>
         </CardContent>
@@ -243,7 +242,7 @@ export default async function SettingsPage({
                 className="w-32"
               />
             </div>
-            <Button type="submit" size="sm">Save goal</Button>
+            <Button type="submit">Save goal</Button>
           </form>
         </CardContent>
       </Card>
@@ -263,7 +262,7 @@ export default async function SettingsPage({
               <Label htmlFor="timezone">Timezone</Label>
               <Input id="timezone" name="timezone" defaultValue={user.timezone} className="w-64" />
             </div>
-            <Button type="submit" size="sm">Save</Button>
+            <Button type="submit">Save</Button>
           </form>
         </CardContent>
       </Card>
@@ -283,7 +282,7 @@ export default async function SettingsPage({
               <Label htmlFor="email">Email</Label>
               <Input id="email" name="email" type="email" required className="w-64" placeholder="sister@example.com" />
             </div>
-            <Button type="submit" size="sm">Create invite</Button>
+            <Button type="submit">Create invite</Button>
           </form>
           {inviteRows.length > 0 && (
             <ul className="space-y-2 text-sm">

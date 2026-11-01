@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { normalizeEmail, safeHttpUrl } from "@/lib/normalize";
+import { decodeEntities, normalizeEmail, safeHttpUrl } from "@/lib/normalize";
+
+describe("decodeEntities", () => {
+  it("undoes HTML entities that come along with pasted text", () => {
+    expect(decodeEntities("McKinsey &amp; Company")).toBe("McKinsey & Company");
+    expect(decodeEntities("Smith &amp; Wesson &lt;3 &quot;quoted&quot; it&#39;s &#x27;ok&#x27;")).toBe(
+      'Smith & Wesson <3 "quoted" it\'s \'ok\'',
+    );
+    expect(decodeEntities("one&nbsp;two")).toBe("one two");
+  });
+
+  it("leaves ordinary text and unknown entities untouched", () => {
+    expect(decodeEntities("R&D at Acme")).toBe("R&D at Acme");
+    expect(decodeEntities("&copy; 2026")).toBe("&copy; 2026");
+  });
+});
 
 describe("safeHttpUrl", () => {
   it("keeps real http(s) links as written", () => {

@@ -28,9 +28,11 @@ export default async function AppLayout({
     // whenever Safari draws full-bleed.
     <div className="min-h-svh pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
       <header className="border-b">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 p-4 pt-[calc(1rem+env(safe-area-inset-top))]">
-          <nav className="flex max-w-full items-center gap-4 overflow-x-auto sm:gap-6">
-            <span className="hidden cursor-default font-semibold select-none md:inline">
+        {/* One row at every width: the nav scrolls sideways on a phone
+            instead of wrapping Sign out onto a second line. */}
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+          <nav className="no-scrollbar flex min-w-0 flex-1 items-center gap-4 overflow-x-auto sm:gap-6">
+            <span className="hidden shrink-0 cursor-default font-semibold tracking-tight select-none md:inline">
               Personal CRM
             </span>
             <NavLinks reviewCount={reviewCount} />
@@ -40,12 +42,12 @@ export default async function AppLayout({
               "use server";
               await signOut({ redirectTo: "/signin" });
             }}
-            className="flex items-center gap-3"
+            className="flex shrink-0 items-center gap-3"
           >
             <span className="hidden text-sm text-muted-foreground lg:inline">
               {user.email}
             </span>
-            <Button variant="outline" size="sm" type="submit">
+            <Button variant="ghost" size="sm" type="submit">
               Sign out
             </Button>
           </form>

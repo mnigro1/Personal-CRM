@@ -25,6 +25,7 @@ import {
   memories,
 } from "@/db/schema";
 import {
+  decodeEntities,
   normalizeDate,
   normalizeEmail,
   safeHttpUrl,
@@ -105,11 +106,31 @@ export function repoFor(workspaceId: string) {
     if (!row) throw new Error("Interaction not found");
   }
 
-  /** URL fields only ever hold http(s) links — see safeHttpUrl. */
+  const CONTACT_TEXT_FIELDS = [
+    "firstName",
+    "lastName",
+    "preferredName",
+    "currentCompany",
+    "currentRole",
+    "location",
+    "howWeMet",
+    "notes",
+    "relationshipCategory",
+  ] as const;
+
+  /**
+   * URL fields only ever hold http(s) links (see safeHttpUrl), and text
+   * fields lose any HTML entities that came along with a paste.
+   */
   function sanitizeContactFields<T extends Partial<NewContact>>(data: T): T {
     const out: Partial<NewContact> = { ...data };
     if ("linkedinUrl" in out) out.linkedinUrl = safeHttpUrl(out.linkedinUrl);
     if ("website" in out) out.website = safeHttpUrl(out.website);
+    for (const field of CONTACT_TEXT_FIELDS) {
+      const value = out[field];
+      if (typeof value === "string")
+        (out as Record<string, unknown>)[field] = decodeEntities(value);
+    }
     return out as T;
   }
 
@@ -703,7 +724,7 @@ export function repoFor(workspaceId: string) {
         .values({
           workspaceId,
           contactId: data.contactId,
-          text: data.text,
+          text: decodeEntities(data.text),
           category: data.category,
           eventDate: data.eventDate ?? null,
           eventDatePrecision: data.eventDatePrecision ?? "none",
@@ -843,8 +864,8 @@ export function repoFor(workspaceId: string) {
         .values({
           workspaceId,
           contactId: data.contactId,
-          description: data.description,
-          reason: data.reason,
+          description: decodeEntities(data.description),
+          reason: decodeEntities(data.reason),
           dueDate: data.dueDate ?? null,
           priority: data.priority ?? "medium",
           createdBy: data.createdBy ?? "user",
