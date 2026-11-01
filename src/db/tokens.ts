@@ -28,6 +28,20 @@ export async function listMcpTokens(userId: string) {
     .orderBy(desc(mcpTokens.createdAt));
 }
 
+/**
+ * Has this user's AI ever actually called in? Answers the onboarding
+ * question "is it working yet" from the tokens' own last_used_at, so the
+ * Home checklist and /connect page need no extra bookkeeping.
+ */
+export async function connectionStatusFor(userId: string) {
+  const rows = await listMcpTokens(userId);
+  const lastUsedAt = rows.reduce<Date | null>((latest, t) => {
+    if (!t.lastUsedAt) return latest;
+    return !latest || t.lastUsedAt > latest ? t.lastUsedAt : latest;
+  }, null);
+  return { hasToken: rows.length > 0, lastUsedAt };
+}
+
 export async function revokeMcpToken(userId: string, tokenId: string) {
   await db
     .update(mcpTokens)

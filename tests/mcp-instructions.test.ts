@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { buildServerInstructions } from "@/lib/mcp-tools";
-import { extractionSettingsFor } from "@/lib/user-settings";
+import { extractionSettingsFor, timezoneConfirmed } from "@/lib/user-settings";
+
+describe("timezoneConfirmed", () => {
+  it("is false until the flag is explicitly set", () => {
+    expect(timezoneConfirmed(null)).toBe(false);
+    expect(timezoneConfirmed({})).toBe(false);
+    expect(timezoneConfirmed({ timezoneConfirmed: "yes" })).toBe(false);
+    expect(timezoneConfirmed({ timezoneConfirmed: true })).toBe(true);
+    expect(timezoneConfirmed({ goals: { introsPerMonth: 2 }, timezoneConfirmed: true })).toBe(true);
+  });
+});
 
 describe("extractionSettingsFor", () => {
   it("defaults to auto-apply and reads an explicit off", () => {

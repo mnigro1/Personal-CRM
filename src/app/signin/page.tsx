@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
 import { Button } from "@/components/ui/button";
@@ -15,9 +16,11 @@ import { Label } from "@/components/ui/label";
 // person can act on; the raw type name told them nothing.
 const ERROR_MESSAGES: Record<string, string> = {
   AccessDenied:
-    "That email isn't on the list yet. Sign-in is by invitation — open the invite link you were sent, or ask whoever invited you for a new one.",
+    "We couldn't sign you in with that address. Check it for typos and try again.",
   RateLimited:
     "Too many sign-in links requested. Check your inbox for one that's already there, or try again in 15 minutes.",
+  Busy:
+    "Sign-in is unusually busy right now and we've paused sending links for a little while. Please try again later today.",
   Verification:
     "That sign-in link has expired or was already used. Request a fresh one below.",
   EmailSignin:
@@ -42,7 +45,7 @@ export default async function SignInPage({
           <CardTitle>Personal CRM</CardTitle>
           <CardDescription>
             Enter your email and we&apos;ll send you a link to sign in — no
-            password needed.
+            password needed. New here? The same link sets up your account.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -82,6 +85,17 @@ export default async function SignInPage({
             <Button type="submit" className="w-full">
               Send me a sign-in link
             </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              By continuing you agree to the{" "}
+              <Link href="/terms" className="underline">
+                Terms
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" className="underline">
+                Privacy Policy
+              </Link>
+              .
+            </p>
             {process.env.NODE_ENV !== "production" && (
               <p className="text-center text-xs text-muted-foreground">
                 Dev mode: the link will print in this terminal instead of

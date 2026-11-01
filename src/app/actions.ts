@@ -12,9 +12,10 @@ import {
   updateUserTimezone,
 } from "@/db/users";
 import { NEW_MCP_TOKEN_COOKIE } from "@/lib/cookies";
-import { zonedLocalToUtc } from "@/lib/dates";
+import { isValidTimeZone, zonedLocalToUtc } from "@/lib/dates";
 import { CHANNELS, type Channel } from "@/lib/drafting";
 import { requireSession } from "@/lib/session";
+import { timezoneConfirmed } from "@/lib/user-settings";
 
 function str(formData: FormData, key: string): string | null {
   const v = formData.get(key);
@@ -392,17 +393,20 @@ export async function createMcpTokenAction(formData: FormData) {
   const { createMcpToken } = await import("@/db/tokens");
   const label = (str(formData, "label") ?? "My AI").slice(0, 100);
   const token = await createMcpToken(user.id, label);
-  revalidatePath("/settings");
-  // Shown once on the Settings page, carried there in a short-lived cookie
-  // rather than the URL so the credential stays out of history and logs.
+  // The guide at /connect and the Settings card both create tokens; go back
+  // to whichever one the user was on.
+  const returnTo = str(formData, "returnTo") === "/connect" ? "/connect" : "/settings";
+  revalidatePath(returnTo);
+  // Shown once on that page, carried there in a short-lived cookie rather
+  // than the URL so the credential stays out of history and logs.
   (await cookies()).set(NEW_MCP_TOKEN_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    path: "/settings",
+    path: "/",
     maxAge: 120,
   });
-  redirect("/settings");
+  redirect(returnTo);
 }
 
 export async function revokeMcpTokenAction(tokenId: string) {
@@ -478,13 +482,30 @@ export async function updateTimezoneAction(formData: FormData) {
   const { user } = await requireSession();
   const timezone = str(formData, "timezone");
   if (!timezone) throw new Error("Timezone is required");
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
-  } catch {
+  if (!isValidTimeZone(timezone)) {
     throw new Error(`Invalid IANA timezone: ${timezone}`);
   }
   await updateUserTimezone(user.id, timezone);
+  // A deliberate choice: the browser is never asked again after this.
+  await updateUserSettings(user.id, (s) => ({ ...s, timezoneConfirmed: true }));
   revalidatePath("/settings");
+}
+
+/**
+ * First visit: adopt the browser's timezone unless the user has already
+ * chosen one. Every account starts on the column default (America/New_York),
+ * which is wrong for most of the world and quietly shifts every date until
+ * corrected. Returns whether the zone actually changed, so the caller knows
+ * to re-render.
+ */
+export async function autoDetectTimezoneAction(timezone: string): Promise<boolean> {
+  const { user } = await requireSession();
+  if (timezoneConfirmed(user.settingsJson)) return false;
+  if (typeof timezone !== "string" || !isValidTimeZone(timezone)) return false;
+  const changed = timezone !== user.timezone;
+  if (changed) await updateUserTimezone(user.id, timezone);
+  await updateUserSettings(user.id, (s) => ({ ...s, timezoneConfirmed: true }));
+  return changed;
 }
 
 /**

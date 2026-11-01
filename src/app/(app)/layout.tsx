@@ -1,7 +1,10 @@
+import Link from "next/link";
 import { signOut } from "@/auth";
 import { NavLinks } from "@/components/nav-links";
+import { TimezoneDetect } from "@/components/timezone-detect";
 import { repoFor } from "@/db/repo";
 import { requireSession } from "@/lib/session";
+import { timezoneConfirmed } from "@/lib/user-settings";
 import { Button } from "@/components/ui/button";
 
 export default async function AppLayout({
@@ -16,6 +19,7 @@ export default async function AppLayout({
     repo.listProposedExtractions(),
   ]);
   const reviewCount = pending.length + proposed.length;
+  const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
 
   return (
     // svh, not dvh: dvh grows when Safari hides its toolbars, which makes the
@@ -48,6 +52,20 @@ export default async function AppLayout({
         </div>
       </header>
       <main className="mx-auto max-w-5xl p-4">{children}</main>
+      <footer className="mx-auto flex max-w-5xl flex-wrap gap-x-4 gap-y-1 px-4 pb-6 pt-8 text-xs text-muted-foreground">
+        <Link href="/privacy" className="hover:text-foreground">
+          Privacy
+        </Link>
+        <Link href="/terms" className="hover:text-foreground">
+          Terms
+        </Link>
+        {supportEmail && (
+          <a href={`mailto:${supportEmail}`} className="hover:text-foreground">
+            Support
+          </a>
+        )}
+      </footer>
+      {!timezoneConfirmed(user.settingsJson) && <TimezoneDetect />}
     </div>
   );
 }

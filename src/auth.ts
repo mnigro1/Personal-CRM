@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/db";
 import { clientIp, consumeRateLimit } from "@/db/rate-limit";
@@ -13,13 +13,20 @@ import {
   workspaces,
 } from "@/db/schema";
 
-// A magic link IS the credential, so asking for one is the endpoint worth
-// abusing: bombing a known user's inbox, or burning the SMTP quota (Gmail
-// allows a few hundred messages a day) until nobody can sign in.
+// Sign-up is open: any address gets its own workspace on first sign-in, so
+// the only gate on sending a magic link is abuse control. A magic link IS
+// the credential, so asking for one is the endpoint worth abusing: bombing
+// a known user's inbox, or burning the SMTP quota until nobody can sign in.
 const SIGNIN_LIMIT_PER_EMAIL = { limit: 5, windowSeconds: 15 * 60 };
 const SIGNIN_LIMIT_PER_IP = { limit: 20, windowSeconds: 15 * 60 };
+// Gmail stops delivering at ~500 messages a day. Tripping our own cap first
+// means a clear "busy, try later" on the sign-in page instead of a silent
+// bounce — and keeps the sending account from being flagged. Raise or drop
+// this once sign-in email moves to a provider on a verified domain.
+const SIGNIN_LIMIT_GLOBAL = { limit: 450, windowSeconds: 24 * 60 * 60 };
 
-async function signInRateLimited(email: string): Promise<boolean> {
+/** The sign-in page to send this request to instead, or null to proceed. */
+async function signInThrottle(email: string): Promise<string | null> {
   let ip = "unknown";
   try {
     ip = clientIp(await headers());
@@ -30,33 +37,10 @@ async function signInRateLimited(email: string): Promise<boolean> {
     consumeRateLimit(`signin:email:${email}`, SIGNIN_LIMIT_PER_EMAIL),
     consumeRateLimit(`signin:ip:${ip}`, SIGNIN_LIMIT_PER_IP),
   ]);
-  return !byEmail.allowed || !byIp.allowed;
-}
-
-async function isSignInAllowed(email: string): Promise<boolean> {
-  const [existing] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email));
-  if (existing) return true;
-
-  // Bootstrap: the very first user in an empty database is the owner.
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(users);
-  if (count === 0) return true;
-
-  const [invite] = await db
-    .select({ id: invites.id })
-    .from(invites)
-    .where(
-      and(
-        eq(invites.email, email),
-        isNull(invites.acceptedAt),
-        gt(invites.expiresAt, new Date()),
-      ),
-    );
-  return !!invite;
+  if (!byEmail.allowed || !byIp.allowed) return "/signin?error=RateLimited";
+  const global = await consumeRateLimit("signin:global", SIGNIN_LIMIT_GLOBAL);
+  if (!global.allowed) return "/signin?error=Busy";
+  return null;
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -140,12 +124,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user, email }) {
       if (!user.email) return false;
       // Only the request step (sending a link) is throttled — clicking the
-      // link is already bounded by the single-use token. Counted before the
-      // allow-list check so unknown addresses can't be probed in bulk either.
-      if (email?.verificationRequest && (await signInRateLimited(user.email))) {
-        return "/signin?error=RateLimited";
+      // link is already bounded by the single-use token.
+      if (email?.verificationRequest) {
+        const sendTo = await signInThrottle(user.email);
+        if (sendTo) return sendTo;
       }
-      return isSignInAllowed(user.email);
+      return true;
     },
     session({ session, user }) {
       session.user.id = user.id;

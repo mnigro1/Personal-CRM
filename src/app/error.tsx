@@ -16,13 +16,27 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-3 text-center">
         <h1 className="text-xl font-semibold">Something went wrong</h1>
         <p className="text-sm text-muted-foreground">
           Your data is safe — nothing is lost by trying again. If this keeps
-          happening, note the time and the reference below and let us know.
+          happening, note the time and the reference below and{" "}
+          {supportEmail ? (
+            <a
+              className="underline"
+              href={`mailto:${supportEmail}?subject=${encodeURIComponent(
+                `Personal CRM error ${error.digest ?? ""}`.trim(),
+              )}`}
+            >
+              email support
+            </a>
+          ) : (
+            "let us know"
+          )}
+          .
         </p>
         {error.digest && (
           <p className="text-xs text-muted-foreground">Reference: {error.digest}</p>

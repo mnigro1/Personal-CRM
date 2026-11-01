@@ -73,6 +73,16 @@ export function utcToZonedLocal(date: Date, timeZone: string): string {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
 
+/** Whether `Intl` knows this IANA zone name ("Europe/Paris"; not "EST"). */
+export function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** "10/31/2026" in the user's zone. */
 export function formatDate(date: Date | string, timeZone: string): string {
   return new Date(date).toLocaleDateString("en-US", { timeZone });
