@@ -241,7 +241,7 @@ describe.skipIf(!hasDb)("repository layer (integration)", async () => {
   });
 
   it("filters: company, open follow-ups", async () => {
-    const boston = await repoA.createContact({ firstName: "FilterBoston", currentCompany: "Acme", location: "Boston" });
+    await repoA.createContact({ firstName: "FilterBoston", currentCompany: "Acme", location: "Boston" });
     const denver = await repoA.createContact({ firstName: "FilterDenver", location: "Denver" });
     await repoA.addFollowUp({ contactId: denver.id, description: "ping", reason: "test" });
 
