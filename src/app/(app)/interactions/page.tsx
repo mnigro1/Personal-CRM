@@ -30,9 +30,9 @@ export default async function InteractionsPage() {
         <TableHeader>
           <TableRow>
             <TableHead>Date</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Source</TableHead>
+            <TableHead className="hidden sm:table-cell">Type</TableHead>
+            <TableHead className="hidden md:table-cell">Location</TableHead>
+            <TableHead>Notes</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -51,10 +51,15 @@ export default async function InteractionsPage() {
               deleteAction={deleteInteractionAction.bind(null, i.id)}
               deleteMessage="Delete this interaction? Its raw notes will be permanently removed."
             >
-              <TableCell>{formatDateTime(i.occurredAt, user.timezone)}</TableCell>
-              <TableCell>{i.type}</TableCell>
-              <TableCell>{i.location}</TableCell>
-              <TableCell className="max-w-md truncate text-sm text-muted-foreground">
+              <TableCell className="whitespace-nowrap">
+                {formatDateTime(i.occurredAt, user.timezone)}
+                <span className="block text-xs text-muted-foreground capitalize sm:hidden">
+                  {i.type}
+                </span>
+              </TableCell>
+              <TableCell className="hidden capitalize sm:table-cell">{i.type}</TableCell>
+              <TableCell className="hidden md:table-cell">{i.location}</TableCell>
+              <TableCell className="max-w-[12rem] truncate text-sm text-muted-foreground sm:max-w-md">
                 {i.rawSource}
               </TableCell>
             </ClickableRow>

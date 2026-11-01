@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { CHANNELS } from "@/lib/drafting";
 
@@ -117,9 +118,9 @@ function MarkSentDialog({
           <div className="my-4 space-y-3">
             <label className="block text-xs font-medium text-muted-foreground">
               Channel
-              <select
+              <NativeSelect
                 name="channel"
-                className="mt-1 w-full rounded border px-2 py-2 text-sm"
+                className="mt-1 w-full font-normal text-foreground"
                 defaultValue="email"
               >
                 {CHANNELS.map((c) => (
@@ -127,7 +128,7 @@ function MarkSentDialog({
                     {c}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
 
             {!bothOptedIn && (
@@ -169,9 +170,9 @@ function RecordOutcomeDialog({ introId }: { introId: string }) {
           </DialogHeader>
 
           <div className="my-4 space-y-3">
-            <select
+            <NativeSelect
               name="outcome"
-              className="w-full rounded border px-2 py-2 text-sm"
+              className="w-full"
               defaultValue=""
               required
             >
@@ -183,7 +184,7 @@ function RecordOutcomeDialog({ introId }: { introId: string }) {
                   {o.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <Textarea name="note" rows={3} placeholder="Any detail worth keeping (optional)" />
           </div>
 

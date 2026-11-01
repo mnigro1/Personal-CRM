@@ -39,6 +39,28 @@ export function safeHttpUrl(value: string | null | undefined): string | null {
   return withScheme;
 }
 
+const ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  "#39": "'",
+  "#x27": "'",
+  nbsp: " ",
+};
+
+/**
+ * Undo the HTML entity encoding that rides along with text copied out of a
+ * web page ("McKinsey &amp; Company"). React escapes on render, so stored
+ * entities show up literally — this keeps them out of the database.
+ */
+export function decodeEntities(value: string): string {
+  return value.replace(
+    /&(amp|lt|gt|quot|#39|#x27|nbsp);/g,
+    (whole, name: string) => ENTITIES[name] ?? whole,
+  );
+}
+
 /** Lowercased and trimmed, or null unless it looks like one address. */
 export function normalizeEmail(value: string | null | undefined): string | null {
   if (value == null) return null;

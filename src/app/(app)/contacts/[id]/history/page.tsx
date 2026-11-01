@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { repoFor } from "@/db/repo";
 import type { revisions } from "@/db/schema";
-import { formatDate, formatDateTime } from "@/lib/dates";
+import { formatDate, formatDateTime, formatDay } from "@/lib/dates";
 import { requireSession } from "@/lib/session";
 
 type Revision = typeof revisions.$inferSelect;
@@ -130,8 +130,8 @@ export default async function ContactHistoryPage({
                 )}
                 <p className="mt-1 text-xs text-muted-foreground">
                   {m.category}
-                  {m.learnedAt && ` · learned ${m.learnedAt}`}
-                  {m.eventDate && ` · event ${m.eventDate}`}
+                  {m.learnedAt && ` · learned ${formatDay(m.learnedAt)}`}
+                  {m.eventDate && ` · event ${formatDay(m.eventDate)}`}
                 </p>
               </div>
             );

@@ -178,7 +178,7 @@ export default async function ReviewScreen({
                       <input
                         name={`nm-edit-text-${i}`}
                         defaultValue={m.text}
-                        className="w-full rounded border px-2 py-1 text-sm"
+                        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                       />
                       <p className="text-xs text-muted-foreground">
                         {refLabel(m.contact)} · {m.category}
@@ -235,7 +235,7 @@ export default async function ReviewScreen({
                     <input
                       name={`fu-edit-description-${i}`}
                       defaultValue={f.description}
-                      className="w-full rounded border px-2 py-1 text-sm"
+                      className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                     />
                     <p className="text-xs text-muted-foreground">
                       {refLabel(f.contact)} · why: {f.reason}

@@ -33,16 +33,19 @@ function SortHead({
   active,
   dir,
   href,
+  className,
   children,
 }: {
   active: boolean;
   dir: SortDir | undefined;
   href: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   const arrow = !active ? "↕" : dir === "asc" ? "↑" : "↓";
   return (
     <TableHead
+      className={className}
       aria-sort={!active ? "none" : dir === "asc" ? "ascending" : "descending"}
     >
       <Link
@@ -113,11 +116,12 @@ export default async function ContactsPage({
     return qs ? `/contacts?${qs}` : "/contacts";
   };
 
-  const head = (key: SortKey, label: string) => (
+  const head = (key: SortKey, label: string, className?: string) => (
     <SortHead
       active={sortState?.key === key}
       dir={sortState?.dir}
       href={sortHref(key)}
+      className={className}
     >
       {label}
     </SortHead>
@@ -127,6 +131,13 @@ export default async function ContactsPage({
   const hasFilters = Object.entries(sp).some(
     ([k, v]) => k !== "sort" && k !== "dir" && v !== undefined && v !== "",
   );
+  // Anything beyond the search box lives behind "More filters"; keep that
+  // open when one of them is in use so the active filter stays visible.
+  const hasAdvanced = ["location", "company", "category", "lastBefore", "lastAfter", "openFollowUps"].some(
+    (k) => asStr(sp[k]) !== undefined,
+  );
+  const roleCompany = (c: (typeof rows)[number]) =>
+    [c.currentRole, c.currentCompany].filter(Boolean).join(" @ ");
 
   return (
     <div className="space-y-6">
@@ -144,40 +155,55 @@ export default async function ContactsPage({
         </div>
       </div>
 
-      <form className="grid grid-cols-2 gap-3 rounded-lg border p-4 md:grid-cols-4">
-        <Input name="q" placeholder="Search name, notes, memories…" defaultValue={asStr(sp.q) ?? ""} className="col-span-2" />
-        <Input name="location" placeholder="Location" defaultValue={asStr(sp.location) ?? ""} />
-        <Input name="company" placeholder="Company" defaultValue={asStr(sp.company) ?? ""} />
-        <Input name="category" placeholder="Relationship category" defaultValue={asStr(sp.category) ?? ""} />
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          Last interaction before
-          <input type="date" name="lastBefore" defaultValue={asStr(sp.lastBefore) ?? ""} className="rounded border px-2 py-1" />
-        </label>
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          after
-          <input type="date" name="lastAfter" defaultValue={asStr(sp.lastAfter) ?? ""} className="rounded border px-2 py-1" />
-        </label>
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          <input type="checkbox" name="openFollowUps" value="1" defaultChecked={sp.openFollowUps === "1"} />
-          Has open follow-ups
-        </label>
-        <div className="col-span-2 flex gap-2 md:col-span-4">
-          <Button type="submit" size="sm">Filter</Button>
-          {hasFilters && (
-            <Button nativeButton={false} variant="ghost" size="sm" render={<Link href="/contacts" />}>
-              Clear
-            </Button>
-          )}
+      <form className="space-y-3 rounded-lg border p-3 sm:p-4">
+        <div className="flex gap-2">
+          <Input
+            type="search"
+            name="q"
+            placeholder="Search name, notes, memories…"
+            defaultValue={asStr(sp.q) ?? ""}
+            className="min-w-0 flex-1"
+          />
+          <div className="flex shrink-0 gap-2">
+            <Button type="submit">Search</Button>
+            {hasFilters && (
+              <Button nativeButton={false} variant="ghost" render={<Link href="/contacts" />}>
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
+        <details open={hasAdvanced}>
+          <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
+            More filters
+          </summary>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+            <Input name="location" placeholder="Location" defaultValue={asStr(sp.location) ?? ""} />
+            <Input name="company" placeholder="Company" defaultValue={asStr(sp.company) ?? ""} />
+            <Input name="category" placeholder="Relationship category" defaultValue={asStr(sp.category) ?? ""} />
+            <label className="space-y-1 text-xs text-muted-foreground">
+              <span>Last interaction before</span>
+              <Input type="date" name="lastBefore" defaultValue={asStr(sp.lastBefore) ?? ""} />
+            </label>
+            <label className="space-y-1 text-xs text-muted-foreground">
+              <span>Last interaction after</span>
+              <Input type="date" name="lastAfter" defaultValue={asStr(sp.lastAfter) ?? ""} />
+            </label>
+            <label className="flex items-center gap-2 self-end pb-1.5 text-sm">
+              <input type="checkbox" name="openFollowUps" value="1" defaultChecked={sp.openFollowUps === "1"} />
+              Has open follow-ups
+            </label>
+          </div>
+        </details>
       </form>
 
       <Table>
         <TableHeader>
           <TableRow>
             {head("name", "Name")}
-            {head("company", "Company / Role")}
-            {head("last", "Last interaction")}
-            {head("followups", "Follow-ups")}
+            {head("company", "Company / Role", "hidden sm:table-cell")}
+            {head("last", "Last interaction", "hidden sm:table-cell")}
+            {head("followups", "Follow-ups", "hidden sm:table-cell")}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -211,9 +237,23 @@ export default async function ContactsPage({
                     </a>
                   )}
                 </span>
+                {/* Phones get one column: the rest of the row folds under the name. */}
+                <div className="mt-0.5 flex max-w-[calc(100vw-4rem)] flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-normal text-muted-foreground sm:hidden">
+                  {roleCompany(c) && (
+                    <span className="min-w-0 max-w-full truncate">{roleCompany(c)}</span>
+                  )}
+                  {c.lastInteractionDate && (
+                    <span className="whitespace-nowrap">
+                      Last {formatDate(c.lastInteractionDate, user.timezone)}
+                    </span>
+                  )}
+                  {followUpCounts.get(c.id) ? (
+                    <Badge variant="secondary">{followUpCounts.get(c.id)} open</Badge>
+                  ) : null}
+                </div>
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {[c.currentRole, c.currentCompany].filter(Boolean).join(" @ ")}
+              <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
+                {roleCompany(c)}
                 {c.location && (
                   <span className="whitespace-nowrap">
                     {(c.currentRole || c.currentCompany) && " · "}
@@ -221,12 +261,12 @@ export default async function ContactsPage({
                   </span>
                 )}
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
+              <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
                 {c.lastInteractionDate
                   ? formatDate(c.lastInteractionDate, user.timezone)
                   : "—"}
               </TableCell>
-              <TableCell className="text-sm">
+              <TableCell className="hidden text-sm sm:table-cell">
                 {followUpCounts.get(c.id) ? (
                   <Badge variant="secondary">
                     {followUpCounts.get(c.id)} open

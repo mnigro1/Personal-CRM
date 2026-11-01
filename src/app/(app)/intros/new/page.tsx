@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { repoFor } from "@/db/repo";
 import { requireSession } from "@/lib/session";
@@ -53,11 +54,11 @@ export default async function NewIntroPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block text-sm font-medium">
                 Person A
-                <select
+                <NativeSelect
                   name="personA"
                   required
                   defaultValue=""
-                  className="mt-1 w-full rounded border px-2 py-2 text-sm"
+                  className="mt-1 w-full font-normal"
                 >
                   <option value="" disabled>
                     Select…
@@ -67,15 +68,15 @@ export default async function NewIntroPage() {
                       {nameOf(c)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
               <label className="block text-sm font-medium">
                 Person B
-                <select
+                <NativeSelect
                   name="personB"
                   required
                   defaultValue=""
-                  className="mt-1 w-full rounded border px-2 py-2 text-sm"
+                  className="mt-1 w-full font-normal"
                 >
                   <option value="" disabled>
                     Select…
@@ -85,7 +86,7 @@ export default async function NewIntroPage() {
                       {nameOf(c)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
             </div>
 

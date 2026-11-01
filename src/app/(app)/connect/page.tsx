@@ -105,9 +105,7 @@ export default async function ConnectPage() {
                   className="w-56"
                 />
               </div>
-              <Button type="submit" size="sm">
-                Create connector URL
-              </Button>
+              <Button type="submit">Create connector URL</Button>
             </form>
           )}
           {status.hasToken && !connectorUrl && (

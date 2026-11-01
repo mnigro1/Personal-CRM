@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { repoFor } from "@/db/repo";
 import { interactionType } from "@/db/schema";
 import { formatDateTime, utcToZonedLocal } from "@/lib/dates";
@@ -89,7 +90,7 @@ export default async function InteractionPage({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">
-            {interaction.type} · {formatDateTime(occurred, user.timezone)}
+            <span className="capitalize">{interaction.type}</span> · {formatDateTime(occurred, user.timezone)}
           </h1>
           <Badge
             variant={
@@ -180,11 +181,11 @@ export default async function InteractionPage({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label htmlFor="type">Type</Label>
-                <select id="type" name="type" className="w-full rounded border px-2 py-2 text-sm" defaultValue={interaction.type}>
+                <NativeSelect id="type" name="type" className="w-full" defaultValue={interaction.type}>
                   {interactionType.enumValues.map((t) => (
                     <option key={t} value={t}>{t}</option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="occurredAt">When</Label>

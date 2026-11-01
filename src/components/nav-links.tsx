@@ -26,7 +26,7 @@ export function NavLinks({ reviewCount }: { reviewCount: number }) {
             href={href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-1 border-b-2 py-1 text-sm transition-colors",
+              "flex shrink-0 items-center gap-1 border-b-2 py-1 text-sm whitespace-nowrap transition-colors",
               active
                 ? "border-foreground font-medium text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",
