@@ -51,13 +51,20 @@ export async function consumeRateLimit(
     }
 
     const hits = row?.hits ?? 1;
+    // window_start is the database's clock and Date.now() is ours; the two
+    // drift by a second or two, so the hint is clamped to the window rather
+    // than trusted to the gap between them.
     const elapsed = row
       ? (Date.now() - new Date(row.windowStart).getTime()) / 1000
       : 0;
+    const retryAfterSeconds = Math.min(
+      rule.windowSeconds,
+      Math.max(1, Math.ceil(rule.windowSeconds - elapsed)),
+    );
     return {
       allowed: hits <= rule.limit,
       remaining: Math.max(0, rule.limit - hits),
-      retryAfterSeconds: Math.max(1, Math.ceil(rule.windowSeconds - elapsed)),
+      retryAfterSeconds,
     };
   } catch (err) {
     console.error("rate limiter unavailable; allowing request", err);
