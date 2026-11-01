@@ -14,11 +14,20 @@ export type ExtractionSettings = {
   autoApply: boolean;
 };
 
+const asRecord = (v: unknown): Record<string, unknown> =>
+  v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+
+/**
+ * True once the user has picked a timezone in Settings or the browser's was
+ * adopted on their first visit. Until then `users.timezone` is only the
+ * column default and the app should still be asking the browser.
+ */
+export function timezoneConfirmed(settingsJson: unknown): boolean {
+  return asRecord(settingsJson).timezoneConfirmed === true;
+}
+
 export function extractionSettingsFor(settingsJson: unknown): ExtractionSettings {
-  const s =
-    settingsJson && typeof settingsJson === "object"
-      ? (settingsJson as Record<string, unknown>)
-      : {};
+  const s = asRecord(settingsJson);
   const extraction =
     s.extraction && typeof s.extraction === "object"
       ? (s.extraction as Record<string, unknown>)

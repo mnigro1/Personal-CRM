@@ -28,7 +28,8 @@ the Mark-sent step that it is what actually went out.
    ```
 
 2. Apply migrations: `npm run db:migrate`
-3. Run: `npm run dev` — sign in at http://localhost:3000; the magic link is printed to this terminal (no email provider in dev). The first user to sign in becomes the owner; further users need an invite from Settings.
+3. Run: `npm run dev` — sign in at http://localhost:3000; the magic link is printed to this terminal (no email provider in dev). Sign-up is open: any address gets its own workspace on first sign-in (invites in Settings just pre-fill the address and hand someone a link).
+4. First visit: the browser's timezone is adopted automatically (changeable in Settings), Home shows a first-run checklist, and `/connect` walks a new user through wiring up Claude or ChatGPT.
 
 ## MCP
 
@@ -82,7 +83,8 @@ lists them with a suggested `log_intro` call so you can decide case by case.
 ## Security notes
 
 - **Production needs an email provider** (`GMAIL_USER` + `GMAIL_APP_PASSWORD`, or `RESEND_API_KEY` + `EMAIL_FROM`). Without one, sign-in refuses to send rather than log a live magic link. Links expire after an hour.
-- **Abuse limits** (Postgres-backed, `src/db/rate-limit.ts`): magic-link requests are capped per email (5 / 15 min) and per IP (20 / 15 min); the hosted MCP endpoint per token (300 / min) and per IP for bad tokens (20 / min). Limits fail open if the database is unreachable.
+- **Abuse limits** (Postgres-backed, `src/db/rate-limit.ts`): magic-link requests are capped per email (5 / 15 min), per IP (20 / 15 min) and globally (450 / day — under Gmail's 500/day sending limit, so the sign-in page says "busy" instead of Gmail bouncing; raise it once email moves to a verified-domain provider); the hosted MCP endpoint per token (300 / min) and per IP for bad tokens (20 / min). Limits fail open if the database is unreachable.
+- **Open sign-up** means anyone can create a workspace. There is no per-account quota yet; watch Neon storage and the sign-in email volume once the public arrives.
 - **Tenant isolation**: every query is scoped by `workspace_id` through `repoFor`; ids a client sends (contact, interaction) are verified against the workspace before they are linked to anything.
 - **URL fields** are restricted to http(s) at write time and again at render, so a pasted `javascript:` link can never become a clickable one.
 - **Headers**: a static Content-Security-Policy (no framing, no plugins, same-origin forms), `nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS — set in `next.config.ts`.

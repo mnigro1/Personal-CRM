@@ -11,6 +11,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { repoFor, type Repo } from "@/db/repo";
+import { connectionStatusFor } from "@/db/tokens";
+import { voiceFor } from "@/lib/drafting";
 import { requireSession } from "@/lib/session";
 
 type Row = Awaited<ReturnType<Repo["listOpenFollowUps"]>>[number];
@@ -36,13 +38,27 @@ export default async function HomePage() {
   const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
 
-  const [followUps, pending, proposed, failed, recent] = await Promise.all([
-    repo.listOpenFollowUps(),
-    repo.listPendingCaptures(),
-    repo.listProposedExtractions(),
-    repo.listFailedExtractions(),
-    repo.listRecentContacts(5),
-  ]);
+  const [followUps, pending, proposed, failed, recent, anyInteraction, connection] =
+    await Promise.all([
+      repo.listOpenFollowUps(),
+      repo.listPendingCaptures(),
+      repo.listProposedExtractions(),
+      repo.listFailedExtractions(),
+      repo.listRecentContacts(5),
+      repo.listInteractions(1),
+      connectionStatusFor(user.id),
+    ]);
+
+  // First-run checklist: shown until the three things that make the product
+  // work have each happened once. Writing a voice is a nudge, not a gate.
+  const setup = {
+    connected: connection.lastUsedAt !== null,
+    hasToken: connection.hasToken,
+    hasContact: recent.length > 0,
+    hasInteraction: anyInteraction.length > 0,
+    hasVoice: !!voiceFor(user).voice,
+  };
+  const showChecklist = !(setup.connected && setup.hasContact && setup.hasInteraction);
 
   // A draft already in flight turns the button into "Open draft" instead of
   // silently starting a second one.
@@ -90,6 +106,8 @@ export default async function HomePage() {
           </Button>
         </div>
       </div>
+
+      {showChecklist && <FirstRunChecklist {...setup} />}
 
       <Card>
         <CardHeader>
@@ -214,6 +232,112 @@ export default async function HomePage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * The three things a new account needs before Home has anything to show,
+ * in the order that makes the rest easy: connect the AI first and the other
+ * two happen by talking to it. Each unfinished step is a link to where it
+ * gets done.
+ */
+function FirstRunChecklist({
+  connected,
+  hasToken,
+  hasContact,
+  hasInteraction,
+  hasVoice,
+}: {
+  connected: boolean;
+  hasToken: boolean;
+  hasContact: boolean;
+  hasInteraction: boolean;
+  hasVoice: boolean;
+}) {
+  const steps: { done: boolean; title: string; detail: string; href: string; cta: string }[] = [
+    {
+      done: connected,
+      title: "Connect your AI",
+      detail: hasToken
+        ? "Your connector URL exists — finish adding it to Claude or ChatGPT and ask it something."
+        : "Five minutes, once. Then you can just tell Claude or ChatGPT about the people you meet.",
+      href: "/connect",
+      cta: hasToken ? "Finish connecting" : "Connect",
+    },
+    {
+      done: hasContact,
+      title: "Add your first contact",
+      detail: "Or let your AI do it: “add Sam Rivera, product lead at Northwind, met at the HBS mixer”.",
+      href: "/contacts/new",
+      cta: "Add a contact",
+    },
+    {
+      done: hasInteraction,
+      title: "Log your first interaction",
+      detail: "Paste notes or a message, or tell your AI what happened. Memories and follow-ups come out the other side.",
+      href: "/interactions/new",
+      cta: "Log one",
+    },
+    {
+      done: hasVoice,
+      title: "Describe how you write (optional)",
+      detail: "Drafts your AI writes for you will sound like you instead of a template.",
+      href: "/settings",
+      cta: "Set your voice",
+    },
+  ];
+  const remaining = steps.filter((s) => !s.done && s.title !== steps[3].title).length;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Let&apos;s get you set up</CardTitle>
+        <CardDescription>
+          {remaining === 1
+            ? "One step to go and the app starts working for you."
+            : `${remaining} short steps and the app starts working for you.`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ol className="space-y-3">
+          {steps.map((s) => (
+            <li key={s.title} className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <span
+                  aria-hidden
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs ${
+                    s.done
+                      ? "border-green-600 bg-green-600 text-white"
+                      : "border-muted-foreground/40 text-transparent"
+                  }`}
+                >
+                  ✓
+                </span>
+                <div className="min-w-0">
+                  <p className={`text-sm font-medium ${s.done ? "text-muted-foreground line-through" : ""}`}>
+                    {s.title}
+                  </p>
+                  {!s.done && (
+                    <p className="text-xs text-muted-foreground">{s.detail}</p>
+                  )}
+                </div>
+              </div>
+              {!s.done && (
+                <Button
+                  size="sm"
+                  variant={s.title === "Connect your AI" ? "default" : "outline"}
+                  nativeButton={false}
+                  render={<Link href={s.href} />}
+                  className="shrink-0"
+                >
+                  {s.cta}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ol>
+      </CardContent>
+    </Card>
   );
 }
 

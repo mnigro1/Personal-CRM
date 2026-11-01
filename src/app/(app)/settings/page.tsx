@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import {
   createInviteAction,
@@ -65,7 +66,11 @@ export default async function SettingsPage({
             Create a connector URL and paste it into claude.ai (Settings →
             Connectors → Add custom connector) or ChatGPT (Settings → Apps
             &amp; Connectors, developer mode). The URL is scoped to your
-            workspace only — treat it like a password.
+            workspace only — treat it like a password. First time?{" "}
+            <Link href="/connect" className="underline">
+              Follow the step-by-step guide
+            </Link>
+            .
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -267,8 +272,9 @@ export default async function SettingsPage({
         <CardHeader>
           <CardTitle>Invites</CardTitle>
           <CardDescription>
-            Invite someone — they get their own fully isolated workspace.
-            Nothing is shared between workspaces.
+            Send someone a sign-in link. Anyone can also sign up on their own
+            at /signin — every account gets its own fully isolated workspace,
+            and nothing is shared between them.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
