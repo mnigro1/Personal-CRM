@@ -2,6 +2,7 @@ import { cookies, headers } from "next/headers";
 import {
   createInviteAction,
   createMcpTokenAction,
+  deleteAccountAction,
   revokeMcpTokenAction,
   updateExtractionSettingsAction,
   updateGoalsAction,
@@ -298,6 +299,78 @@ export default async function SettingsPage({
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Your data</CardTitle>
+          <CardDescription>
+            It&apos;s yours. Download a copy any time, or delete your account
+            and everything in it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            <p className="text-sm font-medium">Download my data</p>
+            <p className="text-sm text-muted-foreground">
+              Everything in your workspace as one file you can keep or take
+              elsewhere: contacts (including archived ones), interactions with
+              your original notes, memories, follow-ups, intros, message
+              drafts, change history and your settings. Or just your contacts,
+              as a spreadsheet.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                nativeButton={false}
+                render={<a href="/api/export" />}
+              >
+                Download everything (JSON)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                nativeButton={false}
+                render={<a href="/api/export?format=csv" />}
+              >
+                Contacts only (CSV)
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Up to 3 downloads every 10 minutes.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-destructive/40 p-3">
+            <p className="text-sm font-medium">Delete my account</p>
+            <p className="text-sm text-muted-foreground">
+              This deletes your account and everything in it: every contact,
+              interaction, memory, follow-up, intro and draft, plus your
+              settings and sign-in. It cannot be undone and we keep no copy.
+              Your AI connector stops working the moment you confirm. Download
+              your data first if you want to keep it.
+            </p>
+            <form action={deleteAccountAction} className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="deleteConfirm">Type DELETE to confirm</Label>
+                <Input
+                  id="deleteConfirm"
+                  name="confirm"
+                  placeholder="DELETE"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  required
+                  pattern="DELETE"
+                  className="w-40"
+                />
+              </div>
+              <Button type="submit" variant="destructive" size="sm">
+                Delete my account
+              </Button>
+            </form>
+          </div>
         </CardContent>
       </Card>
     </div>
