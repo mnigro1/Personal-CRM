@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Terms of Service · Personal CRM" };
+export const metadata = { title: "Terms of Service" };
 
 const LAST_UPDATED = "November 1, 2026";
 
@@ -108,6 +108,7 @@ export default function TermsPage() {
       </section>
 
       <p className="text-xs text-muted-foreground">
+        <Link href="/" className="underline">Home</Link> ·{" "}
         <Link href="/privacy" className="underline">Privacy Policy</Link> ·{" "}
         <Link href="/signin" className="underline">Back to sign in</Link>
       </p>

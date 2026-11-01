@@ -41,6 +41,11 @@ const securityHeaders = [
       ]),
 ];
 
+// Auth.js names its session cookie `authjs.session-token`, with the
+// `__Secure-` prefix whenever the site is served over https (every
+// deployment; plain http only in local dev).
+const SESSION_COOKIES = ["authjs.session-token", "__Secure-authjs.session-token"];
+
 const nextConfig: NextConfig = {
   // Pin the workspace root. Without this, Turbopack walks up looking for a
   // lockfile and can pick a parent directory (e.g. a stray ~/package-lock.json),
@@ -49,6 +54,25 @@ const nextConfig: NextConfig = {
   turbopack: { root: __dirname },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
+  },
+  async rewrites() {
+    return {
+      // `/` is the signed-in Home. A visitor with no session cookie is shown
+      // the public landing page instead, at the same URL: no redirect, no
+      // sign-in wall, and the landing page stays fully static. `beforeFiles`
+      // because an existing page at `/` would otherwise win. The cookie is
+      // only a routing hint, never the authorization: a stale cookie still
+      // reaches Home, where requireSession bounces it to /signin as before.
+      beforeFiles: [
+        {
+          source: "/",
+          missing: SESSION_COOKIES.map((key) => ({ type: "cookie" as const, key })),
+          destination: "/welcome",
+        },
+      ],
+      afterFiles: [],
+      fallback: [],
+    };
   },
 };
 

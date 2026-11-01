@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SITE_DESCRIPTION, SITE_NAME, siteOpenGraph, siteUrl } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,8 +14,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Personal CRM",
-  description: "Remember the people who matter.",
+  // Absolute URLs for everything a link preview or crawler reads. The Open
+  // Graph image itself is src/app/opengraph-image.tsx, picked up by file
+  // convention; `twitter` names no image so it inherits that one.
+  metadataBase: new URL(siteUrl),
+  title: { default: SITE_NAME, template: `%s · ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  openGraph: siteOpenGraph,
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {
