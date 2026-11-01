@@ -24,7 +24,7 @@ import {
   invites,
   memories,
 } from "@/db/schema";
-import { normalizeDate, normalizeTagName, sourceHash } from "@/lib/normalize";
+import { normalizeDate, sourceHash } from "@/lib/normalize";
 import { revisions } from "@/db/schema";
 import { extractionOpsFor } from "@/db/repo-extraction";
 import { draftOpsFor } from "@/db/repo-drafts";

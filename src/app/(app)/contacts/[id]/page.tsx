@@ -8,7 +8,6 @@ import {
 } from "@/app/actions";
 import { DoneDialog } from "@/components/done-dialog";
 import { DraftMessageButton } from "@/components/draft-message-button";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-button";
 import {
