@@ -1,7 +1,5 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
 import { signIn } from "@/auth";
-import { db } from "@/db";
-import { invites } from "@/db/schema";
+import { findOpenInvite } from "@/db/invites";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,16 +15,7 @@ export default async function InvitePage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const [invite] = await db
-    .select()
-    .from(invites)
-    .where(
-      and(
-        eq(invites.token, token),
-        isNull(invites.acceptedAt),
-        gt(invites.expiresAt, new Date()),
-      ),
-    );
+  const invite = await findOpenInvite(token);
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">

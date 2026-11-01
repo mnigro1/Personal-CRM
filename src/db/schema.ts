@@ -250,6 +250,20 @@ export const mcpTokens = pgTable("mcp_tokens", {
 });
 
 // ---------------------------------------------------------------------------
+// Rate limits — fixed-window hit counters keyed by what is being limited
+// ("signin:email:<address>", "mcp:token:<id>"). Infrastructure, not user
+// data: no workspace column, and rows are disposable (see db/rate-limit.ts).
+// ---------------------------------------------------------------------------
+
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  hits: integer("hits").notNull().default(0),
+  windowStart: timestamp("window_start", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Contacts
 // ---------------------------------------------------------------------------
 

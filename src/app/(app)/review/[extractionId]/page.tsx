@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { repoFor } from "@/db/repo";
+import { formatDateTime } from "@/lib/dates";
 import { requireSession } from "@/lib/session";
 import type { StagedProposal } from "@/lib/proposal";
 
@@ -22,7 +23,7 @@ export default async function ReviewScreen({
 }) {
   const { extractionId } = await params;
   const { error } = await searchParams;
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const repo = repoFor(workspace.id);
   const found = await repo.getExtraction(extractionId);
   if (!found) notFound();
@@ -70,7 +71,7 @@ export default async function ReviewScreen({
       <div>
         <h1 className="text-2xl font-semibold">Review proposal</h1>
         <p className="text-sm text-muted-foreground">
-          {interaction.type} · {new Date(interaction.occurredAt).toLocaleString()} · attempt {extraction.attempt} · {extraction.model} · prompt {extraction.promptVersion}
+          {interaction.type} · {formatDateTime(interaction.occurredAt, user.timezone)} · attempt {extraction.attempt} · {extraction.model} · prompt {extraction.promptVersion}
         </p>
       </div>
 

@@ -16,6 +16,38 @@ export function sourceHash(rawSource: string): string {
 }
 
 /**
+ * Only http(s) links are ever stored in, or rendered from, a URL field. A
+ * `javascript:` or `data:` URL — pasted into a note and extracted into
+ * linkedin_url, say — must become null rather than a clickable payload on
+ * the contact page. A bare "linkedin.com/in/x" gets https:// so people can
+ * paste exactly what they see.
+ */
+export function safeHttpUrl(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const v = value.trim();
+  if (!v || v.length > 2048) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  // "https://notes" is a typo, not a site; a real host has a dot.
+  if (!url.hostname.includes(".") && url.hostname !== "localhost") return null;
+  return withScheme;
+}
+
+/** Lowercased and trimmed, or null unless it looks like one address. */
+export function normalizeEmail(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const v = value.trim().toLowerCase();
+  if (!v || v.length > 254) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : null;
+}
+
+/**
  * Coerce a partial date to the full ISO form Postgres `date` columns accept.
  *
  * The extractor is asked for a date AND a precision, so answering "2023" with

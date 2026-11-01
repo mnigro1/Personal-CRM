@@ -25,6 +25,7 @@ async function main() {
   const { buildServerInstructions, registerCrmTools } = await import(
     "../src/lib/mcp-tools"
   );
+  const { extractionSettingsFor } = await import("../src/lib/user-settings");
 
   const email = process.env.MCP_USER_EMAIL;
   if (!email) throw new Error("MCP_USER_EMAIL is not set");
@@ -37,11 +38,17 @@ async function main() {
     .where(eq(workspaces.ownerUserId, user.id));
   if (!workspace) throw new Error(`No workspace for ${email}`);
 
+  const { autoApply } = extractionSettingsFor(user.settingsJson);
   const server = new McpServer(
     { name: "personal-crm", version: "0.1.0" },
-    { instructions: buildServerInstructions({ timezone: user.timezone }) },
+    {
+      instructions: buildServerInstructions({
+        timezone: user.timezone,
+        autoApply,
+      }),
+    },
   );
-  registerCrmTools(server, repoFor(workspace.id), user.id);
+  registerCrmTools(server, repoFor(workspace.id), user.id, { autoApply });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

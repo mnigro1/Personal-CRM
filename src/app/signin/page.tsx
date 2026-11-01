@@ -11,9 +11,29 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default async function SignInPage() {
+// Auth.js sends every failure here as ?error=<type>. Each gets a sentence a
+// person can act on; the raw type name told them nothing.
+const ERROR_MESSAGES: Record<string, string> = {
+  AccessDenied:
+    "That email isn't on the list yet. Sign-in is by invitation — open the invite link you were sent, or ask whoever invited you for a new one.",
+  RateLimited:
+    "Too many sign-in links requested. Check your inbox for one that's already there, or try again in 15 minutes.",
+  Verification:
+    "That sign-in link has expired or was already used. Request a fresh one below.",
+  EmailSignin:
+    "We couldn't send the email just now. Wait a minute and try again.",
+};
+const FALLBACK_ERROR = "Something went wrong signing you in. Please try again.";
+
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const session = await auth();
   if (session?.user) redirect("/");
+  const { error } = await searchParams;
+  const message = error ? (ERROR_MESSAGES[error] ?? FALLBACK_ERROR) : null;
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
@@ -26,6 +46,14 @@ export default async function SignInPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {message && (
+            <p
+              role="alert"
+              className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+            >
+              {message}
+            </p>
+          )}
           <form
             action={async (formData: FormData) => {
               "use server";

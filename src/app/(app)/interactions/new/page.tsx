@@ -1,6 +1,7 @@
 import { createInteractionAction } from "@/app/actions";
 import { repoFor } from "@/db/repo";
 import { interactionType, sourceType } from "@/db/schema";
+import { utcToZonedLocal } from "@/lib/dates";
 import { requireSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,13 +14,11 @@ export default async function NewInteractionPage({
   searchParams: Promise<{ contactId?: string }>;
 }) {
   const { contactId } = await searchParams;
-  const { workspace } = await requireSession();
+  const { user, workspace } = await requireSession();
   const contactRows = await repoFor(workspace.id).listContacts();
 
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
+  // "Now" on the user's clock, not the server's (which is UTC on Vercel).
+  const local = utcToZonedLocal(new Date(), user.timezone);
 
   return (
     <div className="space-y-6">
