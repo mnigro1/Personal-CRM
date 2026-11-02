@@ -161,6 +161,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   events: {
     async createUser({ user }) {
       if (!user.id || !user.email) return;
+      // Idempotent: this event has fired for a user who already had a
+      // workspace (linking a Google sign-in to an existing magic-link
+      // account), and a second, empty workspace hid their data. One
+      // workspace per user, however many times we are told they are new.
+      const [existing] = await db
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(eq(workspaces.ownerUserId, user.id))
+        .limit(1);
+      if (existing) return;
       await db.insert(workspaces).values({
         ownerUserId: user.id,
         name: `${user.name ?? user.email.split("@")[0]}'s workspace`,

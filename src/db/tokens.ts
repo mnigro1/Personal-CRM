@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { mcpTokens, users, workspaces } from "@/db/schema";
 
@@ -69,7 +69,11 @@ export async function resolveMcpToken(token: string) {
     .innerJoin(workspaces, eq(workspaces.ownerUserId, users.id))
     .where(
       and(eq(mcpTokens.tokenHash, hashToken(token)), isNull(mcpTokens.revokedAt)),
-    );
+    )
+    // Same rule as requireSession: if a user somehow owns two workspaces,
+    // the oldest is theirs. Otherwise the AI could be reading an empty twin.
+    .orderBy(asc(workspaces.createdAt))
+    .limit(1);
   if (!row) return null;
   await db
     .update(mcpTokens)
