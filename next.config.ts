@@ -17,9 +17,10 @@ const csp = [
   `connect-src 'self'${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
-  // Google sign-in: the submit is answered with a redirect to Google, and
-  // Chrome checks form-action against redirect targets too.
-  "form-action 'self' https://accounts.google.com",
+  // Google sign-in and Stripe Checkout/Portal: the form submit is answered
+  // with a redirect to their hosted page, and Chrome checks form-action
+  // against redirect targets too.
+  "form-action 'self' https://accounts.google.com https://checkout.stripe.com https://billing.stripe.com",
   "frame-ancestors 'none'",
   ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");

@@ -535,6 +535,33 @@ export async function deleteAccountAction(formData: FormData) {
 // -------------------------------------------------------------------- billing
 
 /**
+ * The user's Stripe customer, created on first need. A stored id is checked
+ * against Stripe first: ids minted in test mode are meaningless once the
+ * live keys go in, and a customer can be deleted in the dashboard, so a
+ * stale id gets replaced rather than failing checkout forever.
+ */
+async function ensureStripeCustomer(
+  stripe: NonNullable<ReturnType<typeof stripeClient>>,
+  user: { id: string; email: string; name: string | null; stripeCustomerId: string | null },
+): Promise<string> {
+  if (user.stripeCustomerId) {
+    try {
+      const existing = await stripe.customers.retrieve(user.stripeCustomerId);
+      if (!("deleted" in existing && existing.deleted)) return existing.id;
+    } catch {
+      // Unknown in this Stripe mode; fall through and mint a fresh one.
+    }
+  }
+  const customer = await stripe.customers.create({
+    email: user.email,
+    name: user.name ?? undefined,
+    metadata: { userId: user.id },
+  });
+  await setStripeCustomer(user.id, customer.id);
+  return customer.id;
+}
+
+/**
  * Send the user to Stripe Checkout for the connector subscription. Stripe
  * hosts the whole payment page; we only learn the result through the
  * webhook, never from the browser coming back.
@@ -547,16 +574,7 @@ export async function startCheckoutAction(formData: FormData) {
   const price = priceIdFor(plan);
   if (!price) throw new Error(`No Stripe price configured for the ${plan} plan`);
 
-  let customerId = user.stripeCustomerId;
-  if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: user.email,
-      name: user.name ?? undefined,
-      metadata: { userId: user.id },
-    });
-    customerId = customer.id;
-    await setStripeCustomer(user.id, customerId);
-  }
+  const customerId = await ensureStripeCustomer(stripe, user);
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
@@ -577,11 +595,19 @@ export async function openBillingPortalAction() {
   const stripe = stripeClient();
   if (!stripe) throw new Error("Billing is not configured");
   if (!user.stripeCustomerId) redirect("/settings?billing=required");
-  const session = await stripe.billingPortal.sessions.create({
-    customer: user.stripeCustomerId,
-    return_url: `${siteUrl}/settings`,
-  });
-  redirect(session.url);
+  let portalUrl: string;
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripeCustomerId,
+      return_url: `${siteUrl}/settings`,
+    });
+    portalUrl = session.url;
+  } catch {
+    // The stored customer isn't valid in this Stripe mode (test id after
+    // switching to live keys): nothing to manage yet.
+    redirect("/settings?billing=required");
+  }
+  redirect(portalUrl);
 }
 
 // ------------------------------------------------------------------- drafting

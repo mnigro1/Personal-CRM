@@ -27,7 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { repoFor } from "@/db/repo";
 import { listMcpTokens } from "@/db/tokens";
 import { NEW_MCP_TOKEN_COOKIE } from "@/lib/cookies";
-import { formatDate, formatDateTime, formatDay } from "@/lib/dates";
+import { formatDate, formatDateTime } from "@/lib/dates";
 import { voiceFor } from "@/lib/drafting";
 import {
   billingEnabled,
@@ -165,16 +165,16 @@ export default async function SettingsPage({
               {access.reason === "subscribed" &&
                 (user.subscriptionStatus === "past_due"
                   ? `Pro — your last payment failed; please update your card${
-                      user.currentPeriodEnd ? ` before ${formatDay(user.currentPeriodEnd.toISOString().slice(0, 10))}` : ""
+                      user.currentPeriodEnd ? ` before ${formatDate(user.currentPeriodEnd, user.timezone)}` : ""
                     }.`
                   : `Pro${
                       user.currentPeriodEnd
-                        ? ` · renews ${formatDay(user.currentPeriodEnd.toISOString().slice(0, 10))}`
+                        ? ` · renews ${formatDate(user.currentPeriodEnd, user.timezone)}`
                         : ""
                     }`)}
               {access.reason === "trial" &&
                 (access.trialEndsAt
-                  ? `Free trial — ${access.daysLeft} day${access.daysLeft === 1 ? "" : "s"} left (ends ${formatDay(access.trialEndsAt.toISOString().slice(0, 10))}).`
+                  ? `Free trial — ${access.daysLeft} day${access.daysLeft === 1 ? "" : "s"} left (ends ${formatDate(access.trialEndsAt, user.timezone)}).`
                   : `Free trial — starts when you create your first connector URL.`)}
               {access.reason === "trial_expired" && "Free trial ended — the connector is paused until you upgrade."}
               {access.reason === "lapsed" && "Subscription lapsed — the connector is paused until you renew."}

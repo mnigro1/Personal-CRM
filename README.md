@@ -80,6 +80,10 @@ Existing `type = 'intro'` interactions are **not** backfilled automatically —
 that would invent opt-in history. `npx tsx scripts/list-intro-interactions.ts`
 lists them with a suggested `log_intro` call so you can decide case by case.
 
+## Billing
+
+The web app is free; the AI connector is **Pro** ($10/month or $79/year) with a 14-day trial that starts at the first connector URL, no card needed. `connectorAccess()` in `src/lib/entitlement.ts` is the single rule (billing off → `FOUNDING_EMAILS` → served Stripe subscription → trial → blocked), enforced when a connector URL is created and on every `/api/mcp/[token]` request (402 JSON-RPC the AI relays). Stripe Checkout and the Customer Portal are server actions; `/api/stripe/webhook` mirrors `customer.subscription.*` / `checkout.session.completed` onto the user's billing columns. With no `STRIPE_SECRET_KEY` billing is off entirely. Env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_ANNUAL`, `FOUNDING_EMAILS` (see `.env.example`). Test mode and live mode have different keys, prices, webhook secrets *and customer ids* — the checkout action re-creates a customer whose stored id Stripe no longer recognises.
+
 ## Security notes
 
 - **Sign-in** is "Continue with Google" (when `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` are set — the recommended path, no email involved) or a magic link. A Google sign-in for an address that already has a magic-link account joins that account; Google verifies emails, which is what makes that safe. There are no passwords to store, reset or leak.
