@@ -4,7 +4,9 @@ import {
   createInviteAction,
   createMcpTokenAction,
   deleteAccountAction,
+  openBillingPortalAction,
   revokeMcpTokenAction,
+  startCheckoutAction,
   updateExtractionSettingsAction,
   updateGoalsAction,
   updateTimezoneAction,
@@ -25,8 +27,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { repoFor } from "@/db/repo";
 import { listMcpTokens } from "@/db/tokens";
 import { NEW_MCP_TOKEN_COOKIE } from "@/lib/cookies";
-import { formatDate, formatDateTime } from "@/lib/dates";
+import { formatDate, formatDateTime, formatDay } from "@/lib/dates";
 import { voiceFor } from "@/lib/drafting";
+import {
+  billingEnabled,
+  CONNECTOR_TRIAL_DAYS,
+  connectorAccess,
+  PRICES,
+} from "@/lib/entitlement";
 import { requireSession } from "@/lib/session";
 import { extractionSettingsFor } from "@/lib/user-settings";
 
@@ -37,10 +45,13 @@ export default async function SettingsPage({
     voiceSaved?: string;
     goalsSaved?: string;
     extractionSaved?: string;
+    billing?: string;
   }>;
 }) {
-  const { voiceSaved, goalsSaved, extractionSaved } = await searchParams;
+  const { voiceSaved, goalsSaved, extractionSaved, billing } = await searchParams;
   const { user, workspace } = await requireSession();
+  const access = connectorAccess(user);
+  const showBilling = billingEnabled();
   const inviteRows = await repoFor(workspace.id).listInvites(user.id);
   const tokens = await listMcpTokens(user.id);
   // Set by createMcpTokenAction moments ago; expires on its own.
@@ -75,6 +86,13 @@ export default async function SettingsPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {billing === "required" && (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+              {access.reason === "lapsed"
+                ? "Your subscription has lapsed, so new connector URLs are paused. Renew below to reconnect."
+                : "Your free connector trial has ended. Upgrade below to keep your AI connected — everything you've saved stays right here either way."}
+            </p>
+          )}
           {newToken && (
             <div className="space-y-1 rounded-lg border border-green-300 bg-green-50 p-3 text-sm dark:border-green-800 dark:bg-green-950">
               <p className="font-medium">
@@ -117,6 +135,77 @@ export default async function SettingsPage({
           )}
         </CardContent>
       </Card>
+
+      {showBilling && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Plan</CardTitle>
+            <CardDescription>
+              The web app is free. The AI connector is Pro: ${PRICES.monthly}/month
+              or ${PRICES.annual}/year, with a {CONNECTOR_TRIAL_DAYS}-day free trial
+              that starts when you create your first connector URL. No card
+              needed to try it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {billing === "success" && (
+              <p className="rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100">
+                You&apos;re on Pro — thank you. It can take a few seconds for
+                the status below to update.
+              </p>
+            )}
+            {billing === "cancel" && (
+              <p className="rounded-lg border p-3 text-sm text-muted-foreground">
+                Checkout cancelled. Nothing was charged.
+              </p>
+            )}
+            <p className="text-sm">
+              <span className="font-medium">Status: </span>
+              {access.reason === "founding" && "Founding member — Pro, free forever."}
+              {access.reason === "subscribed" &&
+                (user.subscriptionStatus === "past_due"
+                  ? `Pro — your last payment failed; please update your card${
+                      user.currentPeriodEnd ? ` before ${formatDay(user.currentPeriodEnd.toISOString().slice(0, 10))}` : ""
+                    }.`
+                  : `Pro${
+                      user.currentPeriodEnd
+                        ? ` · renews ${formatDay(user.currentPeriodEnd.toISOString().slice(0, 10))}`
+                        : ""
+                    }`)}
+              {access.reason === "trial" &&
+                (access.trialEndsAt
+                  ? `Free trial — ${access.daysLeft} day${access.daysLeft === 1 ? "" : "s"} left (ends ${formatDay(access.trialEndsAt.toISOString().slice(0, 10))}).`
+                  : `Free trial — starts when you create your first connector URL.`)}
+              {access.reason === "trial_expired" && "Free trial ended — the connector is paused until you upgrade."}
+              {access.reason === "lapsed" && "Subscription lapsed — the connector is paused until you renew."}
+              {access.reason === "billing_disabled" && "Billing is off in this environment."}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {access.reason !== "founding" && access.reason !== "subscribed" && (
+                <>
+                  <form action={startCheckoutAction}>
+                    <input type="hidden" name="plan" value="monthly" />
+                    <Button type="submit">Upgrade — ${PRICES.monthly}/month</Button>
+                  </form>
+                  <form action={startCheckoutAction}>
+                    <input type="hidden" name="plan" value="annual" />
+                    <Button type="submit" variant="outline">
+                      Upgrade — ${PRICES.annual}/year
+                    </Button>
+                  </form>
+                </>
+              )}
+              {user.stripeCustomerId && (
+                <form action={openBillingPortalAction}>
+                  <Button type="submit" variant="outline">
+                    Manage billing
+                  </Button>
+                </form>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

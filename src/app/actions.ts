@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { signOut } from "@/auth";
+import { setStripeCustomer, startConnectorTrial } from "@/db/billing";
 import { repoFor, type NewContact, type NewInteraction } from "@/db/repo";
 import type { SentOutcome } from "@/db/repo-drafts";
 import {
@@ -14,7 +15,10 @@ import {
 import { NEW_MCP_TOKEN_COOKIE } from "@/lib/cookies";
 import { isValidTimeZone, zonedLocalToUtc } from "@/lib/dates";
 import { CHANNELS, type Channel } from "@/lib/drafting";
+import { connectorAccess } from "@/lib/entitlement";
 import { requireSession } from "@/lib/session";
+import { siteUrl } from "@/lib/site";
+import { priceIdFor, stripeClient, type Plan } from "@/lib/stripe";
 import { timezoneConfirmed } from "@/lib/user-settings";
 
 function str(formData: FormData, key: string): string | null {
@@ -392,10 +396,14 @@ export async function createMcpTokenAction(formData: FormData) {
   const { user } = await requireSession();
   const { createMcpToken } = await import("@/db/tokens");
   const label = (str(formData, "label") ?? "My AI").slice(0, 100);
-  const token = await createMcpToken(user.id, label);
   // The guide at /connect and the Settings card both create tokens; go back
   // to whichever one the user was on.
   const returnTo = str(formData, "returnTo") === "/connect" ? "/connect" : "/settings";
+  // The connector is the paid part. A first URL starts the trial; after the
+  // trial (and with no subscription) the page explains how to upgrade.
+  if (!connectorAccess(user).allowed) redirect(`${returnTo}?billing=required`);
+  await startConnectorTrial(user.id);
+  const token = await createMcpToken(user.id, label);
   revalidatePath(returnTo);
   // Shown once on that page, carried there in a short-lived cookie rather
   // than the URL so the credential stays out of history and logs.
@@ -522,6 +530,58 @@ export async function deleteAccountAction(formData: FormData) {
   // The session row is already gone with the account; this clears the cookie
   // and lands them on the sign-in page with a one-line confirmation.
   await signOut({ redirectTo: "/signin?deleted=1" });
+}
+
+// -------------------------------------------------------------------- billing
+
+/**
+ * Send the user to Stripe Checkout for the connector subscription. Stripe
+ * hosts the whole payment page; we only learn the result through the
+ * webhook, never from the browser coming back.
+ */
+export async function startCheckoutAction(formData: FormData) {
+  const { user } = await requireSession();
+  const stripe = stripeClient();
+  if (!stripe) throw new Error("Billing is not configured");
+  const plan: Plan = str(formData, "plan") === "annual" ? "annual" : "monthly";
+  const price = priceIdFor(plan);
+  if (!price) throw new Error(`No Stripe price configured for the ${plan} plan`);
+
+  let customerId = user.stripeCustomerId;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name: user.name ?? undefined,
+      metadata: { userId: user.id },
+    });
+    customerId = customer.id;
+    await setStripeCustomer(user.id, customerId);
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    customer: customerId,
+    line_items: [{ price, quantity: 1 }],
+    allow_promotion_codes: true,
+    success_url: `${siteUrl}/settings?billing=success`,
+    cancel_url: `${siteUrl}/settings?billing=cancel`,
+    subscription_data: { metadata: { userId: user.id } },
+  });
+  if (!session.url) throw new Error("Stripe did not return a checkout URL");
+  redirect(session.url);
+}
+
+/** Stripe's hosted portal: change card, switch plan, cancel. */
+export async function openBillingPortalAction() {
+  const { user } = await requireSession();
+  const stripe = stripeClient();
+  if (!stripe) throw new Error("Billing is not configured");
+  if (!user.stripeCustomerId) redirect("/settings?billing=required");
+  const session = await stripe.billingPortal.sessions.create({
+    customer: user.stripeCustomerId,
+    return_url: `${siteUrl}/settings`,
+  });
+  redirect(session.url);
 }
 
 // ------------------------------------------------------------------- drafting

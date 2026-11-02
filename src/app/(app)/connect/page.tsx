@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { connectionStatusFor } from "@/db/tokens";
 import { NEW_MCP_TOKEN_COOKIE } from "@/lib/cookies";
 import { formatDateTime } from "@/lib/dates";
+import { connectorAccess } from "@/lib/entitlement";
 import { requireSession } from "@/lib/session";
 
 /**
@@ -25,6 +26,7 @@ import { requireSession } from "@/lib/session";
 export default async function ConnectPage() {
   const { user } = await requireSession();
   const status = await connectionStatusFor(user.id);
+  const access = connectorAccess(user);
   const newToken = (await cookies()).get(NEW_MCP_TOKEN_COOKIE)?.value;
   const h = await headers();
   const origin =
@@ -43,6 +45,31 @@ export default async function ConnectPage() {
           memory and a follow-up.
         </p>
       </div>
+
+      {!access.allowed && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+        >
+          <span className="font-medium">
+            {access.reason === "lapsed" ? "Subscription lapsed." : "Your free trial has ended."}
+          </span>{" "}
+          The connector is paused — your contacts and notes are all still here.{" "}
+          <Link href="/settings" className="underline">
+            Upgrade in Settings
+          </Link>{" "}
+          to reconnect your AI.
+        </div>
+      )}
+      {access.allowed && access.reason === "trial" && access.trialEndsAt && (
+        <p className="text-sm text-muted-foreground">
+          Free trial: {access.daysLeft} day{access.daysLeft === 1 ? "" : "s"} left.{" "}
+          <Link href="/settings" className="underline">
+            See plans
+          </Link>
+          .
+        </p>
+      )}
 
       <div
         role="status"
