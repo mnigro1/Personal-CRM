@@ -82,6 +82,7 @@ lists them with a suggested `log_intro` call so you can decide case by case.
 
 ## Security notes
 
+- **Sign-in** is "Continue with Google" (when `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` are set — the recommended path, no email involved) or a magic link. A Google sign-in for an address that already has a magic-link account joins that account; Google verifies emails, which is what makes that safe. There are no passwords to store, reset or leak.
 - **Production needs an email provider** (`GMAIL_USER` + `GMAIL_APP_PASSWORD`, or `RESEND_API_KEY` + `EMAIL_FROM`). Without one, sign-in refuses to send rather than log a live magic link. Links expire after an hour.
 - **Abuse limits** (Postgres-backed, `src/db/rate-limit.ts`): magic-link requests are capped per email (5 / 15 min), per IP (20 / 15 min) and globally (450 / day — under Gmail's 500/day sending limit, so the sign-in page says "busy" instead of Gmail bouncing; raise it once email moves to a verified-domain provider); the hosted MCP endpoint per token (300 / min) and per IP for bad tokens (20 / min). Limits fail open if the database is unreachable.
 - **Open sign-up** means anyone can create a workspace. There is no per-account quota yet; watch Neon storage and the sign-in email volume once the public arrives.
