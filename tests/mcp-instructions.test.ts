@@ -31,7 +31,8 @@ describe("buildServerInstructions", () => {
   it("tells an auto-apply user's AI to apply without pausing", () => {
     const text = buildServerInstructions({ timezone: "America/New_York", autoApply: true });
     expect(text).toContain("timezone is America/New_York");
-    expect(text).toContain("chosen to auto-apply");
+    expect(text).toContain("applies it on the spot");
+    expect(text).toContain("new people are created");
     expect(text).not.toContain("Never call apply_extraction unprompted");
   });
 
@@ -39,7 +40,7 @@ describe("buildServerInstructions", () => {
     const text = buildServerInstructions({ timezone: "UTC", autoApply: false });
     expect(text).toContain("STOP");
     expect(text).toContain("Never call apply_extraction unprompted");
-    expect(text).not.toContain("chosen to auto-apply");
+    expect(text).not.toContain("applies it on the spot");
     // The rules that don't depend on the setting are still there.
     expect(text).toContain("PROACTIVELY PROCESS CAPTURES");
     expect(text).toContain("DUPLICATE CONTACTS");
@@ -47,6 +48,6 @@ describe("buildServerInstructions", () => {
   });
 
   it("defaults to auto-apply when the option is omitted", () => {
-    expect(buildServerInstructions({ timezone: "UTC" })).toContain("chosen to auto-apply");
+    expect(buildServerInstructions({ timezone: "UTC" })).toContain("applies it on the spot");
   });
 });

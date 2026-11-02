@@ -24,6 +24,14 @@ import { decodeEntities, safeHttpUrl } from "@/lib/normalize";
 
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.85;
 
+/**
+ * Auto-apply: a proposed "new" person whose name matches an existing contact
+ * this closely is treated as that contact rather than created again. 0.6
+ * trigram similarity is "Matt Weinstein" vs "Matthew Weinstein"; two
+ * different surnames score well under it.
+ */
+const AUTO_MATCH_SIMILARITY = 0.6;
+
 /** Base-repo methods the extraction ops depend on. */
 type BaseRepo = {
   recomputeLastInteraction(contactIds: string[]): Promise<void>;
@@ -577,6 +585,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
 
       const batchId = crypto.randomUUID();
       const touchedContacts = new Set<string>();
+      const createdContacts: { mention: string; contactId: string }[] = [];
       const counts = {
         contactsCreated: 0,
         contactsLinked: 0,
@@ -619,6 +628,7 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
             .returning();
           mentionMap.set(mention, created.id);
           touchedContacts.add(created.id);
+          createdContacts.push({ mention, contactId: created.id });
           counts.contactsCreated++;
           await rev({
             entityType: "contact",
@@ -943,7 +953,84 @@ export function extractionOpsFor(workspaceId: string, base: BaseRepo) {
       });
 
       await base.recomputeLastInteraction([...touchedContacts]);
-      return { batchId, counts, touchedContacts: [...touchedContacts] };
+      return {
+        batchId,
+        counts,
+        touchedContacts: [...touchedContacts],
+        createdContacts,
+      };
+    },
+
+    /**
+     * Apply a staged proposal with no human in the loop — the "applied
+     * automatically" setting. Decisions a reviewer would make are made by
+     * rule instead:
+     *  - a proposed new person who closely matches an existing contact IS
+     *    that contact (no duplicate); otherwise they are created;
+     *  - an ambiguous mention with exactly one candidate takes it; with
+     *    several, the mention is skipped and reported, because guessing
+     *    between two real people is the one mistake undo can't make honest;
+     *  - a new memory flagged as a probable duplicate of an existing one is
+     *    left out.
+     * Everything else in the proposal is applied as proposed.
+     */
+    async autoApplyExtraction(extractionId: string, actorUserId: string) {
+      const found = await this.getExtraction(extractionId);
+      if (!found) throw new Error("Extraction not found");
+      const staged = found.extraction.proposalJson as StagedProposal;
+      const proposal = proposalSchema.parse(staged.proposal);
+
+      const resolutions: Record<string, string> = {};
+      const matchedExisting: { mention: string; contactId: string; name: string }[] = [];
+      const skippedMentions: {
+        mention: string;
+        candidates: { contact_id: string; hint?: string }[];
+      }[] = [];
+
+      for (const b of proposal.contact_bindings) {
+        if (b.status === "confident" && b.contact_id) continue;
+        if (b.status === "new") {
+          const match = staged.flags.new_contacts?.[b.mention]?.find(
+            (c) => c.similarity >= AUTO_MATCH_SIMILARITY,
+          );
+          if (match) {
+            resolutions[b.mention] = match.contactId;
+            matchedExisting.push({ mention: b.mention, contactId: match.contactId, name: match.name });
+          } else {
+            resolutions[b.mention] = "create";
+          }
+          continue;
+        }
+        const candidates = b.candidates ?? [];
+        if (candidates.length === 1) {
+          resolutions[b.mention] = candidates[0].contact_id;
+          continue;
+        }
+        resolutions[b.mention] = "skip";
+        skippedMentions.push({ mention: b.mention, candidates });
+      }
+
+      const all = (n: number) => Array.from({ length: n }, (_, i) => i);
+      const newMemories = all(proposal.new_memories.length).filter(
+        (i) => !staged.flags.new_memories[i]?.probableDuplicate,
+      );
+      const skippedDuplicateMemories = proposal.new_memories.length - newMemories.length;
+
+      const result = await this.applyExtraction(
+        extractionId,
+        {
+          binding_resolutions: resolutions,
+          interaction_meta: true,
+          new_memories: newMemories,
+          supersessions: all(proposal.supersessions.length),
+          already_known: all(proposal.already_known.length),
+          follow_ups: all(proposal.follow_ups.length),
+          completed_follow_ups: all(proposal.completed_follow_ups.length),
+          contact_field_updates: all(proposal.contact_field_updates.length),
+        },
+        actorUserId,
+      );
+      return { ...result, matchedExisting, skippedMentions, skippedDuplicateMemories };
     },
 
     // -------------------------------------------------------------- undo
