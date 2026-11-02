@@ -65,6 +65,21 @@ export default function TermsPage() {
       </section>
 
       <section className="space-y-2">
+        <h2 className="text-lg font-medium">Plans and payment</h2>
+        <p>
+          The web app is free. Connecting an AI assistant is part of the Pro
+          plan, which starts with a free trial that needs no payment details.
+          After the trial, Pro is a subscription billed by Stripe monthly or
+          yearly in advance; prices are shown in the app before you pay. You
+          can cancel any time from Settings → Manage billing and keep Pro
+          until the end of the period you paid for; we don&apos;t give partial
+          refunds for unused time, but if something went wrong with a charge,
+          write to us and we&apos;ll put it right. When Pro ends, the AI
+          connector pauses and everything else keeps working.
+        </p>
+      </section>
+
+      <section className="space-y-2">
         <h2 className="text-lg font-medium">Availability and changes</h2>
         <p>
           This is a young product. It is provided as it is, it may change, and

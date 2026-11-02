@@ -3,7 +3,9 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { clientIp, consumeRateLimit } from "@/db/rate-limit";
 import { repoFor } from "@/db/repo";
 import { resolveMcpToken } from "@/db/tokens";
+import { connectorAccess } from "@/lib/entitlement";
 import { buildServerInstructions, registerCrmTools } from "@/lib/mcp-tools";
+import { siteUrl } from "@/lib/site";
 import { extractionSettingsFor } from "@/lib/user-settings";
 
 /**
@@ -63,6 +65,25 @@ async function handle(req: Request, token: string): Promise<Response> {
       -32000,
       "Rate limit exceeded — wait a moment and try again",
       limit.retryAfterSeconds,
+    );
+  }
+
+  // The connector is the paid feature. A lapsed trial or subscription gets
+  // a message the AI will relay verbatim, so the user hears what to do next
+  // in the same chat where it stopped working.
+  const access = connectorAccess({
+    email: auth.userEmail,
+    subscriptionStatus: auth.subscriptionStatus,
+    currentPeriodEnd: auth.currentPeriodEnd,
+    connectorTrialStartedAt: auth.connectorTrialStartedAt,
+  });
+  if (!access.allowed) {
+    return rpcError(
+      402,
+      -32002,
+      access.reason === "trial_expired"
+        ? `Your free trial of the Personal CRM connector has ended. Your notes and contacts are safe in the web app; to keep using the connector, upgrade at ${siteUrl}/settings.`
+        : `Your Personal CRM subscription has lapsed, so the connector is paused. Your data is safe in the web app; renew at ${siteUrl}/settings to reconnect.`,
     );
   }
 

@@ -158,6 +158,17 @@ export const users = pgTable("users", {
   // Required IANA timezone; every relative date the AI resolves anchors here.
   timezone: text("timezone").notNull().default("America/New_York"),
   settingsJson: jsonb("settings_json"),
+  // Billing (see lib/entitlement.ts). The web app is free; the AI connector
+  // is the paid part, with a trial that starts at the first connector URL.
+  // Stripe is the source of truth for the subscription; these columns are
+  // the webhook's copy of it, so entitlement is one indexed read.
+  stripeCustomerId: text("stripe_customer_id").unique(),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  subscriptionStatus: text("subscription_status"),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  connectorTrialStartedAt: timestamp("connector_trial_started_at", {
+    withTimezone: true,
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

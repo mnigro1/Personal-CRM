@@ -61,6 +61,10 @@ export async function resolveMcpToken(token: string) {
       userEmail: users.email,
       timezone: users.timezone,
       settingsJson: users.settingsJson,
+      // For the connector entitlement check (lib/entitlement.ts).
+      subscriptionStatus: users.subscriptionStatus,
+      currentPeriodEnd: users.currentPeriodEnd,
+      connectorTrialStartedAt: users.connectorTrialStartedAt,
       workspaceId: workspaces.id,
       workspaceName: workspaces.name,
     })

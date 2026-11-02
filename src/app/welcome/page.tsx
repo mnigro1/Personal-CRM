@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CONNECTOR_TRIAL_DAYS, PRICES } from "@/lib/entitlement";
 import { SITE_DESCRIPTION, SITE_NAME, TAGLINE } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
@@ -97,7 +98,9 @@ export default function WelcomePage() {
 
       <main className="mx-auto max-w-2xl space-y-16 px-4 pt-10 pb-16 sm:pt-16">
         <section className="space-y-5">
-          <Badge variant="secondary">Free while in beta</Badge>
+          <Badge variant="secondary">
+            Free to use · AI connector free for {CONNECTOR_TRIAL_DAYS} days
+          </Badge>
           <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
             {TAGLINE}
           </h1>
@@ -171,12 +174,37 @@ export default function WelcomePage() {
           </CardHeader>
         </Card>
 
-        <section className="space-y-4 border-t pt-10">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Free while in beta.
-          </h2>
+        <section id="pricing" className="space-y-6 border-t pt-10">
+          <h2 className="text-2xl font-semibold tracking-tight">Pricing</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border p-5">
+              <p className="font-medium">Free</p>
+              <p className="mt-1 text-3xl font-semibold tracking-tight">$0</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                The whole web app: contacts, notes, memories, follow-ups,
+                intros. Yours for as long as you like.
+              </p>
+            </div>
+            <div className="rounded-xl border-2 border-foreground p-5">
+              <p className="font-medium">Pro</p>
+              <p className="mt-1 text-3xl font-semibold tracking-tight">
+                ${PRICES.monthly}
+                <span className="text-base font-normal text-muted-foreground">/month</span>
+              </p>
+              <p className="text-sm text-muted-foreground">
+                or ${PRICES.annual}/year
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Connect Claude or ChatGPT and let it do the typing: capture,
+                memories, follow-ups, snapshots and drafts, hands-free.
+              </p>
+              <p className="mt-2 text-sm font-medium">
+                {CONNECTOR_TRIAL_DAYS}-day free trial. No card needed.
+              </p>
+            </div>
+          </div>
           <p className="text-muted-foreground">
-            Sign in with your email and you&apos;re in. No card, no password.
+            Sign in with Google or your email and you&apos;re in. No password.
           </p>
           <Button
             size="lg"
