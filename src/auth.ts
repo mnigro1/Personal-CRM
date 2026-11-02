@@ -1,4 +1,5 @@
 import NextAuth from "next-auth";
+import Google from "next-auth/providers/google";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { and, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -43,6 +44,15 @@ async function signInThrottle(email: string): Promise<string | null> {
   return null;
 }
 
+/**
+ * "Continue with Google" needs an OAuth client (AUTH_GOOGLE_ID/SECRET, see
+ * .env.example). Without one the button is simply absent and sign-in is
+ * email-only, so a dev checkout works with no Google setup at all.
+ */
+export const GOOGLE_SIGNIN_ENABLED = Boolean(
+  process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
+);
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: DrizzleAdapter(db, {
     usersTable: users,
@@ -51,6 +61,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     verificationTokensTable: verificationTokens,
   }),
   providers: [
+    ...(GOOGLE_SIGNIN_ENABLED
+      ? [
+          Google({
+            // Google verifies the address it hands us, so a Google sign-in
+            // for an email that already has an account (made via magic
+            // link) joins that account instead of failing with
+            // OAuthAccountNotLinked. Only safe because the provider
+            // guarantees the email is verified — don't copy for others.
+            allowDangerousEmailAccountLinking: true,
+          }),
+        ]
+      : []),
     {
       id: "email",
       type: "email",

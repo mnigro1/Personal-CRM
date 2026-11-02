@@ -17,7 +17,9 @@ const csp = [
   `connect-src 'self'${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  // Google sign-in: the submit is answered with a redirect to Google, and
+  // Chrome checks form-action against redirect targets too.
+  "form-action 'self' https://accounts.google.com",
   "frame-ancestors 'none'",
   ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
