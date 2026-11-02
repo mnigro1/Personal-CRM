@@ -125,8 +125,8 @@ describe.skipIf(!hasDb)("hosted MCP endpoint (integration)", async () => {
     // Settings → AI extraction defaults to auto-apply, so the review pause
     // is gone; blocking items (ambiguous bindings, new contacts) still
     // surface. The held-for-review wording is covered in the unit test.
-    expect(instructions).toContain("chosen to auto-apply");
-    expect(instructions).toContain("Blocking items");
+    expect(instructions).toContain("applies it on the spot");
+    expect(instructions).toContain("skippedMentions");
     // Proactive processing default.
     expect(instructions).toContain("PROACTIVELY PROCESS CAPTURES");
     expect(instructions).toContain("refresh_contact_summary");

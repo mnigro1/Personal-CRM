@@ -24,18 +24,18 @@ const LIMITS = {
 } as const;
 const str = (max: number) => z.string().max(max);
 
-/** What the AI does once a proposal is staged, by the user's setting. */
+/** What happens once a proposal is submitted, by the user's setting. */
 const applyStep = (autoApply: boolean) =>
   autoApply
-    ? "then call apply_extraction immediately for everything non-blocked — this user has chosen to auto-apply, so don't pause for a review step."
-    : "and STOP there: this user reviews every proposal before it lands. Summarize what you staged (quote proposed memory texts), link the reviewUrl, and call apply_extraction only for items they explicitly approve in chat.";
+    ? "and that is the whole job: in this workspace submit_extraction_proposal APPLIES the proposal on the spot. New people are created automatically (or matched to an existing contact when the name is a near match), memories and follow-ups land, and the response tells you what happened. Do NOT call apply_extraction afterwards. If the response lists skippedMentions (a name that could be two different existing contacts), ask the user which one they meant and record those facts with add_memory / add_follow_up on the right contact."
+    : "and STOP there: this user reviews every proposal before it lands. Summarize what you staged (quote proposed memory texts), link the reviewUrl, and call apply_extraction only for items they explicitly approve in chat. Blocked items (ambiguous bindings, proposed new contacts) always need their call: surface them rather than guessing.";
 
 /**
  * The extraction contract, inlined for remote AI clients (claude.ai,
  * ChatGPT) that can't read mcp/EXTRACTION.md from the repo. Keep in sync
  * with that file and PROMPT_VERSION.
  */
-const extractionRules = (autoApply: boolean) => `You are the extraction engine. Turn the raw interaction text into a PROPOSAL via submit_extraction_proposal, ${applyStep(autoApply)} Blocked items (ambiguous bindings, proposed new contacts) always need a human call: surface them rather than guessing.
+const extractionRules = (autoApply: boolean) => `You are the extraction engine. Turn the raw interaction text into a PROPOSAL via submit_extraction_proposal, ${applyStep(autoApply)}
 Proposal JSON shape:
 {
  "interaction": {"type"?, "occurred_at"?, "location"?, "summary"?},
@@ -64,10 +64,10 @@ export function buildServerInstructions(opts: {
 }): string {
   const autoApply = opts.autoApply ?? true;
   const processCaptures = autoApply
-    ? "For every pending item, run the full pipeline (get_extraction_context → submit_extraction_proposal → apply_extraction) automatically — this user has chosen to auto-apply everything non-blocked, so don't pause for confirmation. Still surface blocking items (ambiguous bindings, proposed new contacts) rather than guessing through them, and tell the user what was applied."
+    ? "For every pending item, run get_extraction_context → submit_extraction_proposal. That applies it on the spot — new people are created (or matched to an existing contact) automatically, so there is nothing to confirm and no apply_extraction call to make. Tell the user what landed, and if the response lists skippedMentions, ask which contact was meant."
     : "For every pending item, run get_extraction_context → submit_extraction_proposal, then STOP: this user reviews every proposal before it lands. Summarize what you staged (quote the proposed memory texts), give the review link, and call apply_extraction only for items they explicitly approve in chat.";
   const captureStep3 = autoApply
-    ? "Immediately (no need to ask) get_extraction_context, follow its instructions field exactly, submit_extraction_proposal, then apply_extraction for everything non-blocked — this user auto-applies by choice, don't wait for chat confirmation."
+    ? "Immediately (no need to ask) get_extraction_context, follow its instructions field exactly, then submit_extraction_proposal — it applies immediately, new people included. Don't call apply_extraction and don't wait for confirmation."
     : "Immediately (no need to ask) get_extraction_context, follow its instructions field exactly, submit_extraction_proposal, then stop and show what you proposed — this user approves on the web review screen or by saying so in chat. Never call apply_extraction unprompted.";
 
   return `This is the user's personal relationship CRM. You are its interface: capture interactions accurately, retrieve context on request, and never write bad data. Precision beats speed — ask instead of guessing.
@@ -83,7 +83,7 @@ CAPTURING (when the user describes a conversation or pastes notes):
 2. log_interaction: rawSource = the user's words VERBATIM (never summarized or cleaned up), resolved occurredAt, inferred type, location if mentioned, contactIds of present people only.
 3. ${captureStep3}
 4. Report concisely what was applied${autoApply ? "" : " or staged"}.
-5. Blocking items (ambiguous names, proposed new contacts) still need the user's call — surface them rather than guessing, and mention the review link for anything left unresolved.
+5. ${autoApply ? "A skipped mention (one name, two possible existing contacts) is the only thing that needs the user's call — ask, then record the facts on the right contact." : "Blocking items (ambiguous names, proposed new contacts) still need the user's call — surface them rather than guessing, and mention the review link for anything left unresolved."}
 
 DUPLICATE CONTACTS: before creating anyone, search_contacts for their name — create_contact also hard-blocks likely duplicates and returns candidates; ask the user "same person?" and reuse the existing record unless they confirm it's someone new (then retry with force: true). find_duplicate_contacts scans for existing duplicate pairs on request. When a pair IS the same person, merge_contacts consolidates them — but only ever after the user confirms both that it's one person and which record to keep; a name match is never enough on its own. Never merge people who merely share a name. After merging, refresh_contact_summary for the survivor.
 
@@ -352,9 +352,10 @@ export function registerCrmTools(
   server.registerTool(
     "submit_extraction_proposal",
     {
-      annotations: { title: "Stage extraction proposal", ...safeWrite },
-      description:
-        "Stage an extraction proposal for user review (never applies anything directly). Follow the rules and JSON shape from get_extraction_context's instructions. Returns dedup flags and blocking items (ambiguous/new bindings) — relay those to the user. The user approves on the web review screen, or in chat via apply_extraction.",
+      annotations: { title: autoApply ? "Submit and apply extraction" : "Stage extraction proposal", ...safeWrite },
+      description: autoApply
+        ? "Submit an extraction proposal; it is APPLIED immediately. New people are created (or matched to an existing contact on a near-identical name), memories/follow-ups land, probable-duplicate memories are dropped. Follow the rules and JSON shape from get_extraction_context's instructions. The response reports counts, createdContacts, matchedExisting and skippedMentions (ambiguous names left for the user to settle). No apply_extraction call is needed."
+        : "Stage an extraction proposal for user review (never applies anything directly). Follow the rules and JSON shape from get_extraction_context's instructions. Returns dedup flags and blocking items (ambiguous/new bindings) — relay those to the user. The user approves on the web review screen, or in chat via apply_extraction.",
       inputSchema: {
         interactionId: z.string().uuid(),
         proposal: z
@@ -373,6 +374,24 @@ export function registerCrmTools(
         const blocking = staged.proposal.contact_bindings.filter(
           (b) => b.status !== "confident",
         );
+        if (autoApply) {
+          const applied = await repo.autoApplyExtraction(extraction.id, actorUserId);
+          return json({
+            extractionId: extraction.id,
+            applied: true,
+            batchId: applied.batchId,
+            counts: applied.counts,
+            touchedContacts: applied.touchedContacts,
+            createdContacts: applied.createdContacts,
+            matchedExisting: applied.matchedExisting,
+            skippedDuplicateMemories: applied.skippedDuplicateMemories,
+            skippedMentions: applied.skippedMentions,
+            next:
+              applied.skippedMentions.length > 0
+                ? "Applied. The skippedMentions could each be one of several existing contacts — ask the user which, then add_memory / add_follow_up on that contact. Then refresh_contact_summary for touchedContacts."
+                : "Applied. Tell the user what landed in a line or two, then refresh_contact_summary for each of touchedContacts. undo_extraction_batch reverses it if anything is wrong.",
+          });
+        }
         return json({
           extractionId: extraction.id,
           attempt: extraction.attempt,
@@ -402,7 +421,7 @@ export function registerCrmTools(
     {
       description: `${
         autoApply
-          ? "Apply a staged proposal. This user auto-applies: call it right after submit_extraction_proposal for everything non-blocked."
+          ? "Rarely needed here: submit_extraction_proposal already applies. Use only for a proposal that was staged earlier while review mode was on."
           : "Apply an approved subset of a staged proposal — ONLY after the user has explicitly approved the items in chat."
       } Selections use array indices from the proposal; binding_resolutions maps each ambiguous/new mention to a contact UUID, 'create', or 'skip'. Every change is revision-logged under a batch id; undo is always available.`,
       inputSchema: {

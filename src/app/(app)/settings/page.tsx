@@ -123,9 +123,10 @@ export default async function SettingsPage({
           <CardTitle>AI extraction</CardTitle>
           <CardDescription>
             When your AI turns notes into memories and follow-ups, it can
-            apply them straight away or stage them for you to review first.
-            Either way, new people and ambiguous names always wait for your
-            call, and every applied batch can be undone.
+            apply them straight away — new people are added on the spot,
+            and a name that nearly matches someone you already have goes to
+            that contact instead of a duplicate — or stage everything for
+            you to review first. Every applied batch can be undone.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -142,7 +143,7 @@ export default async function SettingsPage({
                 name="autoApply"
                 defaultValue={extraction.autoApply ? "yes" : "no"}
               >
-                <option value="yes">applied automatically</option>
+                <option value="yes">applied automatically, new people included</option>
                 <option value="no">held for my review</option>
               </NativeSelect>
             </div>

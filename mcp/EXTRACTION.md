@@ -11,11 +11,17 @@ stage a proposal via `submit_extraction_proposal`.
 1. `list_pending_captures` → pick an interaction
 2. `get_extraction_context(interactionId)` → raw source + roster + current memories + timezone
 3. Build the proposal JSON (below) and `submit_extraction_proposal`
-4. This user has a standing instruction to auto-approve: call
-   `apply_extraction` immediately for everything non-blocked, no wait for
-   chat confirmation. Blocking items (ambiguous names, new contacts,
-   probable duplicates) still need a human call — surface them and apply
-   the rest. Report what was applied and what's still blocked.
+4. What happens next depends on the user's Settings → "AI extraction":
+   - **Applied automatically** (the default): `submit_extraction_proposal`
+     applies the proposal on the spot. New people are created, or matched
+     to an existing contact when the name is a near match; probable
+     duplicate memories are dropped; an ambiguous mention with several
+     candidates is skipped and returned as `skippedMentions`. Do not call
+     `apply_extraction`. Report what landed; ask about skipped mentions
+     and record those facts with `add_memory` / `add_follow_up`.
+   - **Held for review**: the proposal is staged; the user approves on the
+     web review screen or in chat via `apply_extraction`. Blocking items
+     (ambiguous names, new contacts) need their call — surface them.
 
 ## Proposal JSON
 
